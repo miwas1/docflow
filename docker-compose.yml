@@ -53,7 +53,7 @@ services:
     image: doc-platform-api:latest
     container_name: doc-platform-api
     env_file:
-      - .env.example
+      - .env
     environment:
       POSTGRES_DSN: postgresql+psycopg://doc_platform:doc_platform@postgres:5432/doc_platform
       RABBITMQ_URL: amqp://doc_platform:doc_platform@rabbitmq:5672/doc_platform
@@ -86,7 +86,7 @@ services:
     image: doc-platform-orchestrator:latest
     container_name: doc-platform-orchestrator
     env_file:
-      - .env.example
+      - .env
     environment:
       POSTGRES_DSN: postgresql+psycopg://doc_platform:doc_platform@postgres:5432/doc_platform
       RABBITMQ_URL: amqp://doc_platform:doc_platform@rabbitmq:5672/doc_platform
@@ -112,7 +112,7 @@ services:
     image: doc-platform-extractor:latest
     container_name: doc-platform-extractor
     env_file:
-      - .env.example
+      - .env
     environment:
       RABBITMQ_URL: amqp://doc_platform:doc_platform@rabbitmq:5672/doc_platform
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
@@ -134,12 +134,24 @@ services:
     image: doc-platform-classifier:latest
     container_name: doc-platform-classifier
     env_file:
-      - .env.example
+      - .env
     environment:
       RABBITMQ_URL: amqp://doc_platform:doc_platform@rabbitmq:5672/doc_platform
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      CLASSIFIER_MODEL_NAME: ${CLASSIFIER_MODEL_NAME:-answerdotai/ModernBERT-base}
+      CLASSIFIER_MODEL_VERSION: ${CLASSIFIER_MODEL_VERSION:-dev-modernbert}
+      CLASSIFIER_MODEL_PROVIDER: ${CLASSIFIER_MODEL_PROVIDER:-huggingface}
+      CLASSIFIER_MODEL_CACHE_DIR: ${CLASSIFIER_MODEL_CACHE_DIR:-/models/huggingface}
+      CLASSIFIER_MODEL_LOCAL_FILES_ONLY: ${CLASSIFIER_MODEL_LOCAL_FILES_ONLY:-true}
+      CLASSIFIER_DEVICE: ${CLASSIFIER_DEVICE:-cpu}
+      CLASSIFIER_MAX_LENGTH: ${CLASSIFIER_MAX_LENGTH:-1024}
+      CLASSIFIER_CONFIDENCE_THRESHOLD: ${CLASSIFIER_CONFIDENCE_THRESHOLD:-0.6}
+      CLASSIFIER_LABEL_DESCRIPTIONS_JSON: ${CLASSIFIER_LABEL_DESCRIPTIONS_JSON}
+      HF_HOME: ${CLASSIFIER_MODEL_CACHE_DIR:-/models/huggingface}
     ports:
       - "8002:8002"
+    volumes:
+      - ${CLASSIFIER_MODEL_CACHE_HOST_PATH:-/opt/doc-platform/hf-cache}:${CLASSIFIER_MODEL_CACHE_DIR:-/models/huggingface}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -148,6 +160,7 @@ services:
       interval: 120s
       timeout: 20s
       retries: 5
+      start_period: 45s
 
   # ---------------------------------------------------------------------------
   # Dozzle — real-time Docker log viewer, accessible at http://<host>/dozzle

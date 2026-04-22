@@ -9,6 +9,10 @@ description = "Classifier service for the document OCR platform"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115,<1.0",
+  "huggingface_hub>=0.31,<1.0",
+  "pydantic-settings>=2.7,<3.0",
+  "torch>=2.8,<3.0",
+  "transformers>=4.52,<5.0",
   "uvicorn>=0.32,<1.0",
 ]
 

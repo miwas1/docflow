@@ -42,7 +42,23 @@ The default local values are already set up for:
 
 You can keep `.env.example` as-is for the default local stack, or override values in `.env`.
 
-### 3. Install Python dependencies
+### 3. Pre-download the classifier model cache
+
+The classifier now expects a local Hugging Face cache with the configured ModernBERT model before the container starts. On Linux or EC2, run the one-time bootstrap script:
+
+```bash
+./scripts/bootstrap_ec2_dev.sh --skip-docker-install
+```
+
+The script:
+
+- keeps your existing `.env` if present, or creates one from `.env.example`
+- creates the host cache directory from `CLASSIFIER_MODEL_CACHE_HOST_PATH`
+- downloads `CLASSIFIER_MODEL_NAME` into that cache
+
+On EC2 you can omit `--skip-docker-install` and let the script install Docker too.
+
+### 4. Install Python dependencies
 
 ```bash
 make bootstrap
@@ -56,7 +72,7 @@ This installs the editable packages for:
 - `services/extractor`
 - `services/classifier`
 
-### 4. Run the test suite
+### 5. Run the test suite
 
 Run the full Phase 1 and Phase 2 Python checks:
 
@@ -80,7 +96,7 @@ make test-extractor
 If you want the Phase 4 classification/results checks:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/classifier/src pytest services/classifier/tests/test_health.py services/classifier/tests/test_inference_service.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/classifier/src pytest services/classifier/tests/test_health.py services/classifier/tests/test_inference_service.py services/classifier/tests/test_bootstrap_config.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/orchestrator/src pytest services/orchestrator/tests/test_classification_tasks.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/src pytest services/api/tests/test_results_contract.py services/api/tests/test_results_api.py services/api/tests/test_status_api.py -q
 ```
@@ -100,7 +116,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/orch
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/src pytest services/api/tests/test_operator_dashboard.py services/api/tests/test_webhook_dispatch_api.py -q
 ```
 
-### 5. Start the local infrastructure and services
+### 6. Start the local infrastructure and services
 
 ```bash
 docker compose up --build
@@ -122,7 +138,9 @@ This builds and starts:
 
 On first run the API container automatically runs `alembic upgrade head` before starting uvicorn.
 
-### 6. Verify the stack
+The classifier container mounts `${CLASSIFIER_MODEL_CACHE_HOST_PATH}` into `${CLASSIFIER_MODEL_CACHE_DIR}` and reads ModernBERT from the local cache instead of downloading it on startup.
+
+### 7. Verify the stack
 
 Check container status:
 
@@ -199,6 +217,12 @@ Two environment variables control session behaviour (set in `.env` for local dev
 
 The stack is designed to run on an EC2 instance with nginx as the public entry point on port 80.
 
+### Recommended instance sizes
+
+- `t3.xlarge` — lowest-cost dev box that can work for a single developer
+- `t3.2xlarge` — better burstable dev option if you run the full stack often
+- `m7i.2xlarge` — smoother default if you want more headroom and fewer CPU-credit surprises
+
 ### EC2 security group rules (recommended)
 
 | Port | Protocol | Source | Purpose |
@@ -213,24 +237,20 @@ Do **not** expose ports 8000, 8001, or 8002 publicly — all external API traffi
 ### First-time EC2 setup
 
 ```bash
-# Install Docker on Amazon Linux 2023
-sudo dnf install -y docker
-sudo systemctl enable --now docker
-sudo usermod -aG docker ec2-user
-newgrp docker
-
-# Install the Compose plugin
-sudo mkdir -p /usr/local/lib/docker/cli-plugins
-sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
-# Clone and start
 git clone <your-repo-url>
 cd doc_ocr_classification
-cp .env.example .env
+
+# One-time bootstrap: installs Docker if needed, creates .env, and pre-downloads ModernBERT
+./scripts/bootstrap_ec2_dev.sh --user ec2-user
+
+# If this is the first time your user was added to the docker group:
+newgrp docker
+
+# Start the stack with current repo code
 docker compose up --build -d
 ```
+
+The bootstrap script seeds the model cache into `CLASSIFIER_MODEL_CACHE_HOST_PATH` so later `docker compose up --build` runs reuse the downloaded weights while still rebuilding your latest code.
 
 ### Accessing services on EC2
 
@@ -255,7 +275,7 @@ To rebuild only one service:
 docker compose up --build -d api
 ```
 
-### 7. Try the upload contract
+### 8. Try the upload contract
 
 Phase 2 adds a protected multipart upload endpoint and stage-based polling contract.
 
@@ -270,7 +290,7 @@ curl -X POST http://localhost:8000/v1/documents:upload \
 
 If accepted, the response includes `job_id`, `document_id`, `status`, and `current_stage`.
 
-### 8. Verify the Phase 3 extraction pipeline
+### 9. Verify the Phase 3 extraction pipeline
 
 Check the extractor endpoint directly:
 
@@ -288,7 +308,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/orch
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/extractor/src pytest services/extractor/tests/test_health.py services/extractor/tests/test_extraction_service.py -q
 ```
 
-### 9. Verify the Phase 4 classification and results pipeline
+### 10. Verify the Phase 4 classification and results pipeline
 
 Confirm the classifier endpoint directly:
 
@@ -308,12 +328,12 @@ curl -H "X-API-Key: demo-secret-key" \
 Run the targeted classification/results verification suites:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/classifier/src pytest services/classifier/tests/test_health.py services/classifier/tests/test_inference_service.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/classifier/src pytest services/classifier/tests/test_health.py services/classifier/tests/test_inference_service.py services/classifier/tests/test_bootstrap_config.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/orchestrator/src pytest services/orchestrator/tests/test_classification_tasks.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/src pytest services/api/tests/test_results_contract.py services/api/tests/test_results_api.py services/api/tests/test_status_api.py -q
 ```
 
-### 10. Verify the Phase 5 webhook, observability, and operator surfaces
+### 11. Verify the Phase 5 webhook, observability, and operator surfaces
 
 Set the internal bearer tokens in `.env` if you changed them from `.env.example`:
 
@@ -334,7 +354,7 @@ Run the targeted Phase 5 verification suite:
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/src:services/orchestrator/src:services/extractor/src:services/classifier/src pytest services/api/tests/test_webhook_contract.py services/api/tests/test_webhook_dispatch_api.py services/api/tests/test_observability.py services/api/tests/test_operator_dashboard.py services/orchestrator/tests/test_webhook_tasks.py services/orchestrator/tests/test_observability.py -q
 ```
 
-### 11. Verify the Phase 6 reliability and input-safety behavior
+### 12. Verify the Phase 6 reliability and input-safety behavior
 
 Phase 6 adds conservative validation and bounded failure handling:
 
@@ -359,7 +379,7 @@ Useful checks while the stack is running:
 - verify `/internal/operator/jobs/{job_id}` shows `retry_count`, `dead_letter_reason`, and `terminal_failure_category`
 - confirm a completed job still returns `/v1/jobs/<job_id>/results` even if webhook delivery later exhausts retries
 
-### 12. Synchronous fast-path for digital documents
+### 13. Synchronous fast-path for digital documents
 
 For `text/plain`, `application/json`, `application/pdf` (digital), and `application/vnd.openxmlformats-officedocument.wordprocessingml.document` uploads the API attempts inline extraction + classification within a configurable deadline before the HTTP response is returned. If both stages complete in time the upload response will contain `status: "completed"` and the full classification result immediately. If either stage exceeds the deadline or fails, the job is transparently handed off to the Celery async queue and the response will contain `status: "queued"` instead.
 

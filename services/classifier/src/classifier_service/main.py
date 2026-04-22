@@ -1,14 +1,26 @@
 """FastAPI entrypoint for the classifier service."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from classifier_service.inference import ClassificationError, ClassificationRequest, run_classification
+from classifier_service.inference import (
+    ClassificationError,
+    ClassificationRequest,
+    run_classification,
+    warm_runtime,
+)
 from classifier_service.observability import setup_classifier_observability
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Document Platform Classifier", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        warm_runtime()
+        yield
+
+    app = FastAPI(title="Document Platform Classifier", version="0.1.0", lifespan=lifespan)
     setup_classifier_observability(app)
 
     @app.exception_handler(ClassificationError)

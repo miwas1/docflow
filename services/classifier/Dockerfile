@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY packages/contracts ./packages/contracts
 COPY services/classifier ./services/classifier
 
+ENV HF_HOME=/models/huggingface
+
 RUN pip install --no-cache-dir \
     -e ./packages/contracts \
     -e ./services/classifier
