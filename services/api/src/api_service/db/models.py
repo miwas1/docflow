@@ -2,10 +2,9 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from api_service.db.base import Base
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 def utcnow() -> datetime:
@@ -29,14 +28,26 @@ class Job(Base):
     failure_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
     retry_count: Mapped[int] = mapped_column(nullable=False, default=0)
     max_retry_count: Mapped[int] = mapped_column(nullable=False, default=0)
-    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     dead_letter_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    terminal_failure_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    terminal_failure_category: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
-    events: Mapped[list["JobEvent"]] = relationship(back_populates="job", cascade="all, delete-orphan")
-    artifacts: Mapped[list["Artifact"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    events: Mapped[list["JobEvent"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
+    artifacts: Mapped[list["Artifact"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
     extraction_runs: Mapped[list["ExtractionRun"]] = relationship(
         back_populates="job",
         cascade="all, delete-orphan",
@@ -60,6 +71,59 @@ class Job(Base):
     )
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean(), default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    sessions: Mapped[list["UserSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    api_clients: Mapped[list["APIClient"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (Index("ix_users_email", "email"),)
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    session_token_hash: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
+
+    __table_args__ = (
+        Index("ix_user_sessions_user_id", "user_id"),
+        Index("ix_user_sessions_session_token_hash", "session_token_hash", unique=True),
+    )
+
+
 class APIClient(Base):
     __tablename__ = "api_clients"
 
@@ -68,8 +132,17 @@ class APIClient(Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     api_key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    user: Mapped["User | None"] = relationship(back_populates="api_clients")
     webhook_subscriptions: Mapped[list["WebhookSubscription"]] = relationship(
         back_populates="client",
         cascade="all, delete-orphan",
@@ -81,16 +154,22 @@ class APIClient(Base):
         primaryjoin="APIClient.client_id == foreign(WebhookDelivery.client_id)",
     )
 
+    __table_args__ = (Index("ix_api_clients_user_id", "user_id"),)
+
 
 class JobEvent(Base):
     __tablename__ = "job_events"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
 
     job: Mapped[Job] = relationship(back_populates="events")
 
@@ -101,13 +180,17 @@ class Artifact(Base):
     __tablename__ = "artifacts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
     artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     media_type: Mapped[str] = mapped_column(String(128), nullable=False)
     metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
 
     job: Mapped[Job] = relationship(back_populates="artifacts")
 
@@ -118,16 +201,24 @@ class ExtractionRun(Base):
     __tablename__ = "extraction_runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     extraction_path: Mapped[str] = mapped_column(String(32), nullable=False)
     fallback_used: Mapped[bool] = mapped_column(nullable=False, default=False)
     fallback_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     page_count: Mapped[int] = mapped_column(nullable=False)
-    source_artifact_ids_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source_artifact_ids_json: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     trace_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     job: Mapped[Job] = relationship(back_populates="extraction_runs")
 
@@ -142,23 +233,33 @@ class ModelVersion(Base):
     version: Mapped[str] = mapped_column(String(64), nullable=False)
     routing_policy: Mapped[str] = mapped_column(String(128), nullable=False)
     rollout_bucket: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
 
 
 class ClassificationRun(Base):
     __tablename__ = "classification_runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     final_label: Mapped[str] = mapped_column(String(64), nullable=False)
     confidence: Mapped[float] = mapped_column(nullable=False)
     low_confidence_policy: Mapped[str] = mapped_column(String(128), nullable=False)
     threshold_applied: Mapped[float] = mapped_column(nullable=False)
-    candidate_labels_json: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    candidate_labels_json: Mapped[list[dict]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     trace_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     job: Mapped[Job] = relationship(back_populates="classification_runs")
 
@@ -169,13 +270,21 @@ class WebhookSubscription(Base):
     __tablename__ = "webhook_subscriptions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    client_id: Mapped[str] = mapped_column(ForeignKey("api_clients.client_id", ondelete="CASCADE"), nullable=False)
+    client_id: Mapped[str] = mapped_column(
+        ForeignKey("api_clients.client_id", ondelete="CASCADE"), nullable=False
+    )
     target_url: Mapped[str] = mapped_column(String(1024), nullable=False)
     signing_secret: Mapped[str] = mapped_column(String(255), nullable=False)
-    subscribed_events_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    subscribed_events_json: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     client: Mapped[APIClient] = relationship(back_populates="webhook_subscriptions")
     deliveries: Mapped[list["WebhookDelivery"]] = relationship(
@@ -190,8 +299,12 @@ class WebhookDelivery(Base):
     __tablename__ = "webhook_deliveries"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
-    client_id: Mapped[str] = mapped_column(ForeignKey("api_clients.client_id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    client_id: Mapped[str] = mapped_column(
+        ForeignKey("api_clients.client_id", ondelete="CASCADE"), nullable=False
+    )
     subscription_id: Mapped[str] = mapped_column(
         ForeignKey("webhook_subscriptions.id", ondelete="CASCADE"),
         nullable=False,
@@ -202,14 +315,24 @@ class WebhookDelivery(Base):
     attempt_count: Mapped[int] = mapped_column(nullable=False, default=0)
     last_http_status: Mapped[int | None] = mapped_column(nullable=True)
     last_error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     job: Mapped[Job] = relationship(back_populates="webhook_deliveries")
     client: Mapped[APIClient] = relationship(back_populates="webhook_deliveries")
-    subscription: Mapped[WebhookSubscription] = relationship(back_populates="deliveries")
+    subscription: Mapped[WebhookSubscription] = relationship(
+        back_populates="deliveries"
+    )
 
     __table_args__ = (
         Index("ix_webhook_deliveries_job_id", "job_id"),

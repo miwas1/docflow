@@ -54,6 +54,8 @@ services:
       POSTGRES_DSN: postgresql+psycopg://doc_platform:doc_platform@postgres:5432/doc_platform
       RABBITMQ_URL: amqp://doc_platform:doc_platform@rabbitmq:5672/doc_platform
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      SESSION_SECRET_KEY: dev-session-secret-change-me
+      SESSION_EXPIRE_SECONDS: "2592000"
     ports:
       - "8000:8000"
     depends_on:

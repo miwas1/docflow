@@ -1,0 +1,23 @@
+{{not_found}}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;margin-bottom:20px">
+  <div class="card">
+    <h2>Job Details — <code style="font-size:.9rem">{{job_id}}</code></h2>
+    {{job_meta}}
+  </div>
+  <div class="card">
+    <h2>Stage Timeline</h2>
+    {{stage_timeline}}
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px">
+  <div class="card">
+    <h2>Classification</h2>
+    {{classification_card}}
+  </div>
+  <div class="card">
+    <h2>Artifacts</h2>
+    {{artifacts_list}}
+  </div>
+</div>

@@ -1,0 +1,45 @@
+<div class="card" style="margin-bottom:20px">
+  <h2>Add Webhook Subscription</h2>
+  <p class="muted" style="margin-bottom:16px;font-size:.875rem">
+    Each subscription gets a unique <code>whsec_…</code> signing secret for HMAC-SHA256
+    payload verification. Create an API key first if the dropdown is empty.
+  </p>
+  <form method="post" action="/dashboard/webhooks">
+    <div class="field">
+      <label>API Key / Client</label>
+      <select name="client_id" required>
+        {{client_options}}
+      </select>
+    </div>
+    <div class="field">
+      <label>Target URL</label>
+      <input type="url" name="target_url"
+             placeholder="https://your-server.com/webhook" required />
+    </div>
+    <div class="field">
+      <label>Events</label>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;font-size:.9rem">
+        {{event_checkboxes}}
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Create subscription</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Active Subscriptions</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Client</th>
+        <th>Target URL</th>
+        <th>Events</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{sub_rows}}
+    </tbody>
+  </table>
+</div>

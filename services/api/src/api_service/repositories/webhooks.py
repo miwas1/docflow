@@ -5,10 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from api_service.db.models import WebhookDelivery, WebhookSubscription
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-from api_service.db.models import WebhookDelivery, WebhookSubscription
 
 
 def create_webhook_subscription(
@@ -32,10 +31,15 @@ def create_webhook_subscription(
     return subscription
 
 
-def get_active_webhook_subscription_for_client(session: Session, *, client_id: str) -> WebhookSubscription | None:
+def get_active_webhook_subscription_for_client(
+    session: Session, *, client_id: str
+) -> WebhookSubscription | None:
     statement = (
         select(WebhookSubscription)
-        .where(WebhookSubscription.client_id == client_id, WebhookSubscription.is_active.is_(True))
+        .where(
+            WebhookSubscription.client_id == client_id,
+            WebhookSubscription.is_active.is_(True),
+        )
         .order_by(WebhookSubscription.created_at.desc())
     )
     return session.scalars(statement).first()
@@ -89,14 +93,85 @@ def update_webhook_delivery_attempt(
     return delivery
 
 
-def list_webhook_deliveries_for_job(session: Session, *, job_id: str) -> list[WebhookDelivery]:
-    statement = select(WebhookDelivery).where(WebhookDelivery.job_id == job_id).order_by(WebhookDelivery.created_at.asc())
+def list_webhook_deliveries_for_job(
+    session: Session, *, job_id: str
+) -> list[WebhookDelivery]:
+    statement = (
+        select(WebhookDelivery)
+        .where(WebhookDelivery.job_id == job_id)
+        .order_by(WebhookDelivery.created_at.asc())
+    )
     return list(session.scalars(statement))
 
 
-def get_webhook_delivery_for_job(session: Session, *, job_id: str, delivery_id: str) -> WebhookDelivery | None:
+def get_webhook_delivery_for_job(
+    session: Session, *, job_id: str, delivery_id: str
+) -> WebhookDelivery | None:
     statement = select(WebhookDelivery).where(
         WebhookDelivery.job_id == job_id,
         WebhookDelivery.id == delivery_id,
     )
     return session.scalar(statement)
+
+
+def list_subscriptions_for_user(
+    session: Session,
+    user_id: str,
+) -> list[WebhookSubscription]:
+    """Return all webhook subscriptions for clients owned by a dashboard user."""
+    from api_service.db.models import APIClient  # local import avoids circularity
+
+    statement = (
+        select(WebhookSubscription)
+        .join(APIClient, APIClient.client_id == WebhookSubscription.client_id)
+        .where(APIClient.user_id == user_id)
+        .order_by(WebhookSubscription.created_at.desc())
+    )
+    return list(session.scalars(statement))
+
+
+def get_subscription_for_user(
+    session: Session,
+    subscription_id: str,
+    user_id: str,
+) -> WebhookSubscription | None:
+    """Return a subscription only if it belongs to a client owned by user."""
+    from api_service.db.models import APIClient
+
+    statement = (
+        select(WebhookSubscription)
+        .join(APIClient, APIClient.client_id == WebhookSubscription.client_id)
+        .where(
+            WebhookSubscription.id == subscription_id,
+            APIClient.user_id == user_id,
+        )
+    )
+    return session.scalar(statement)
+
+
+def update_subscription(
+    session: Session,
+    *,
+    subscription_id: str,
+    user_id: str,
+    target_url: str,
+    subscribed_events: list[str],
+    is_active: bool,
+) -> WebhookSubscription | None:
+    """Update mutable fields of a subscription owned by the user."""
+    sub = get_subscription_for_user(session, subscription_id, user_id)
+    if sub is None:
+        return None
+    sub.target_url = target_url
+    sub.subscribed_events_json = subscribed_events
+    sub.is_active = is_active
+    session.flush()
+    return sub
+
+
+def delete_subscription(session: Session, subscription_id: str, user_id: str) -> None:
+    """Delete a subscription owned by the user."""
+    sub = get_subscription_for_user(session, subscription_id, user_id)
+    if sub:
+        session.delete(sub)
+        session.flush()

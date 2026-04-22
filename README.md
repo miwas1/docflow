@@ -152,6 +152,49 @@ Internal operator surface:
 
 ---
 
+## User Dashboard
+
+The platform includes a self-service web dashboard for external API clients to manage their credentials and monitor jobs.
+
+### Access
+
+| Page | URL |
+|---|---|
+| Landing page | `http://localhost:8000/` |
+| Sign up | `http://localhost:8000/dashboard/signup` |
+| Log in | `http://localhost:8000/dashboard/login` |
+| Home (stats) | `http://localhost:8000/dashboard/home` |
+| API Keys | `http://localhost:8000/dashboard/api-keys` |
+| Webhooks | `http://localhost:8000/dashboard/webhooks` |
+| Job History | `http://localhost:8000/dashboard/jobs` |
+
+### What you can do
+
+| Feature | Details |
+|---|---|
+| **Sign up / Log in** | Email + password; bcrypt-hashed passwords; 30-day HttpOnly session cookie |
+| **API Keys** | Generate named keys (`dp_…`); plaintext shown once at creation; revoke at any time |
+| **Webhooks** | Add webhook subscriptions per API key; each gets a `whsec_…` HMAC-SHA256 signing secret |
+| **Job History** | Browse all jobs submitted via your API keys; filter by status; drill into stage timeline, classification result, and artifacts |
+
+### Session configuration
+
+Two environment variables control session behaviour (set in `.env` for local dev, or via docker-compose `environment:` for containers):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SESSION_SECRET_KEY` | `dev-session-secret-change-me` | **Change this in production.** Used as a salt for session token hashing. |
+| `SESSION_EXPIRE_SECONDS` | `2592000` (30 days) | How long a login session stays valid. |
+
+### Security notes
+
+- Session tokens are stored as SHA-256 hashes in the `user_sessions` table — the plaintext token only exists in the browser cookie.
+- API key plaintexts are never persisted; only the SHA-256 hash is stored in `api_clients`.
+- Session cookies are `HttpOnly` and `SameSite=Lax`. Set `secure=True` in `routers/dashboard/auth.py` when deploying behind HTTPS.
+- Passwords are hashed with bcrypt at 12 rounds.
+
+---
+
 ## EC2 Development Setup
 
 The stack is designed to run on an EC2 instance with nginx as the public entry point on port 80.

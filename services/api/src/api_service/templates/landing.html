@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DocFlow — Document OCR & Classification Platform</title>
+  <style>
+    :root {
+      --brand: #4f46e5;
+      --brand-dark: #3730a3;
+      --brand-light: #eef2ff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --bg: #f8fafc;
+      --white: #ffffff;
+      --border: #e2e8f0;
+      --radius: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); }
+
+    /* Nav */
+    nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 5%; height: 64px;
+      background: var(--white); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { font-size: 1.25rem; font-weight: 700; color: var(--brand); text-decoration: none; }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; }
+    .btn { display: inline-block; padding: 8px 20px; border-radius: 8px; font-size: .9rem;
+           font-weight: 500; cursor: pointer; text-decoration: none; border: none; }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-dark); }
+    .btn-outline { border: 1.5px solid var(--brand); color: var(--brand); background: transparent; }
+    .btn-outline:hover { background: var(--brand-light); }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 100px 5% 80px;
+      background: linear-gradient(160deg, var(--brand-light) 0%, var(--white) 60%);
+    }
+    .hero .badge {
+      display: inline-block; background: var(--brand-light); color: var(--brand);
+      font-size: .75rem; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+      margin-bottom: 20px; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; line-height: 1.15;
+               color: var(--text); max-width: 760px; margin: 0 auto 20px; }
+    .hero p { font-size: 1.15rem; color: var(--muted); max-width: 560px; margin: 0 auto 36px; line-height: 1.7; }
+    .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+    /* Code snippet */
+    .code-preview {
+      margin: 0 auto; max-width: 680px;
+      background: #0f172a; color: #e2e8f0;
+      border-radius: var(--radius); padding: 24px 28px;
+      font-family: "Fira Code", "Cascadia Code", monospace;
+      font-size: .85rem; line-height: 1.75; text-align: left;
+      box-shadow: 0 20px 60px rgba(79, 70, 229, .15);
+    }
+    .code-preview .c { color: #64748b; }
+    .code-preview .k { color: #c084fc; }
+    .code-preview .s { color: #86efac; }
+    .code-preview .n { color: #93c5fd; }
+
+    /* Features */
+    .section { padding: 80px 5%; max-width: 1200px; margin: 0 auto; }
+    .section-title { text-align: center; font-size: 1.9rem; font-weight: 700; margin-bottom: 12px; }
+    .section-sub { text-align: center; color: var(--muted); font-size: 1rem; margin-bottom: 48px; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+    .feature-card {
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px 24px;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, .04);
+    }
+    .feature-icon { font-size: 2rem; margin-bottom: 14px; }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 8px; }
+    .feature-card p { font-size: .9rem; color: var(--muted); line-height: 1.65; }
+
+    /* How it works */
+    .steps { display: flex; gap: 0; flex-wrap: wrap; }
+    .step {
+      flex: 1; min-width: 200px; position: relative;
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px 24px; margin: 8px;
+    }
+    .step-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; background: var(--brand); color: #fff;
+      border-radius: 50%; font-weight: 700; margin-bottom: 14px;
+    }
+    .step h3 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+    .step p { font-size: .88rem; color: var(--muted); line-height: 1.6; }
+
+    /* CTA strip */
+    .cta-strip {
+      background: linear-gradient(135deg, var(--brand) 0%, #7c3aed 100%);
+      color: #fff; text-align: center; padding: 72px 5%;
+    }
+    .cta-strip h2 { font-size: 2rem; font-weight: 700; margin-bottom: 14px; }
+    .cta-strip p { opacity: .85; margin-bottom: 32px; font-size: 1.05rem; }
+    .btn-white { background: #fff; color: var(--brand); font-weight: 600; }
+    .btn-white:hover { background: var(--brand-light); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border); background: var(--white);
+      padding: 32px 5%; display: flex; justify-content: space-between;
+      align-items: center; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: .85rem;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">DocFlow</a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how-it-works">How it works</a>
+    <a href="/docs">API Docs</a>
+    <a href="/dashboard/login" class="btn btn-outline">Sign in</a>
+    <a href="/dashboard/signup" class="btn btn-primary">Get started</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="badge">Open Source · API First · Self-hostable</div>
+  <h1>Extract text &amp; classify documents at scale</h1>
+  <p>Submit scanned or digital documents and receive accurate extracted text plus classification results through a production-ready asynchronous platform.</p>
+  <div class="hero-cta">
+    <a href="/dashboard/signup" class="btn btn-primary" style="font-size:1rem;padding:12px 28px">Start for free</a>
+    <a href="/docs" class="btn btn-outline" style="font-size:1rem;padding:12px 28px">View API docs</a>
+  </div>
+
+  <div class="code-preview" style="margin-top:52px">
+    <span class="c"># Submit a document — get results async</span><br>
+    <span class="k">import</span> requests<br><br>
+    resp = requests.post(<br>
+    &nbsp;&nbsp;<span class="s">"https://api.yourhost.com/v1/documents:upload"</span>,<br>
+    &nbsp;&nbsp;headers={<span class="s">"X-API-Key"</span>: <span class="s">"dp_your_key"</span>},<br>
+    &nbsp;&nbsp;files={<span class="s">"file"</span>: open(<span class="s">"invoice.pdf"</span>, <span class="s">"rb"</span>)},<br>
+    )<br>
+    job_id = resp.json()[<span class="s">"job_id"</span>] &nbsp;<span class="c"># poll or wait for webhook</span>
+  </div>
+</section>
+
+<!-- Features -->
+<div class="section" id="features">
+  <h2 class="section-title">Everything you need, nothing you don't</h2>
+  <p class="section-sub">Built on open-source models. No vendor lock-in.</p>
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">📄</div>
+      <h3>Hybrid Extraction</h3>
+      <p>Direct text parsing for PDFs, DOCX, TXT, and JSON. Automatic OCR fallback for scanned images and encrypted documents.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏷️</div>
+      <h3>Document Classification</h3>
+      <p>Classify documents into a fixed taxonomy (invoices, receipts, contracts, etc.) with confidence scores and candidate labels.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Asynchronous Pipeline</h3>
+      <p>Extraction and classification run as independent, scalable stages. Poll for status or receive instant webhook notifications.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔑</div>
+      <h3>API Key Management</h3>
+      <p>Generate multiple API keys per account, revoke them instantly, and scope webhooks per key for clean multi-integration setups.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔔</div>
+      <h3>Webhooks with Retries</h3>
+      <p>Reliable webhook delivery with automatic retries, HMAC-SHA256 signing, and full delivery history in your dashboard.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Full Observability</h3>
+      <p>OpenTelemetry tracing, structured logs, and an operator dashboard for real-time debugging and pipeline monitoring.</p>
+    </div>
+  </div>
+</div>
+
+<!-- How it works -->
+<div class="section" id="how-it-works" style="background: var(--brand-light); border-radius: var(--radius); max-width: 100%; padding: 80px 5%;">
+  <div style="max-width:1200px; margin: 0 auto">
+    <h2 class="section-title">How it works</h2>
+    <p class="section-sub">Four steps from upload to results.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Submit</h3>
+        <p>POST your document to <code>/v1/documents:upload</code> with your API key. Receive a <code>job_id</code> immediately.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Extract</h3>
+        <p>The pipeline auto-detects the document type and runs direct parsing or OCR as appropriate.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Classify</h3>
+        <p>The extracted text is scored against your label taxonomy and the best-fit label with confidence is returned.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h3>Retrieve</h3>
+        <p>Poll <code>/v1/jobs/{job_id}</code> or receive a signed webhook notification when your results are ready.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CTA -->
+<div class="cta-strip">
+  <h2>Ready to get started?</h2>
+  <p>Create a free account and submit your first document in minutes.</p>
+  <a href="/dashboard/signup" class="btn btn-white" style="font-size:1rem;padding:12px 32px">Create your account</a>
+</div>
+
+<footer>
+  <span>© 2026 DocFlow. Open source under MIT.</span>
+  <div style="display:flex;gap:20px">
+    <a href="/docs">API Docs</a>
+    <a href="/healthz">Status</a>
+  </div>
+</footer>
+
+</body>
+</html>

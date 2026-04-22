@@ -1,0 +1,39 @@
+<div class="stats">
+  <div class="stat stat-queued">
+    <div class="stat-label">Queued</div>
+    <div class="stat-value">{{queued}}</div>
+  </div>
+  <div class="stat stat-running">
+    <div class="stat-label">Running</div>
+    <div class="stat-value">{{running}}</div>
+  </div>
+  <div class="stat stat-completed">
+    <div class="stat-label">Completed</div>
+    <div class="stat-value">{{completed}}</div>
+  </div>
+  <div class="stat stat-failed">
+    <div class="stat-label">Failed</div>
+    <div class="stat-value">{{failed}}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent Jobs</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Job ID</th>
+        <th>File</th>
+        <th>Status</th>
+        <th>Stage</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{job_rows}}
+    </tbody>
+  </table>
+  <p style="margin-top:14px;font-size:.85rem">
+    <a href="/dashboard/jobs" class="link">View all jobs →</a>
+  </p>
+</div>

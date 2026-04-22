@@ -1,0 +1,36 @@
+<div class="card" style="margin-bottom:20px">
+  <h2>Create New API Key</h2>
+  <p class="muted" style="margin-bottom:16px;font-size:.875rem">
+    API keys are shown <strong>once</strong> at creation — store them securely.
+    Keys are prefixed <code>dp_</code> and authenticate requests via the
+    <code>X-API-Key</code> header.
+  </p>
+  <form method="post" action="/dashboard/api-keys"
+        style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+    <div class="field" style="flex:1;min-width:200px;margin:0">
+      <label>Key name</label>
+      <input type="text" name="display_name" placeholder="e.g. Production, CI/CD" required />
+    </div>
+    <button type="submit" class="btn btn-primary" style="flex-shrink:0">Generate key</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Your API Keys</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Key suffix</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{key_rows}}
+    </tbody>
+  </table>
+</div>
+
+{{reveal_modal}}

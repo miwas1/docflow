@@ -1,16 +1,19 @@
 """Reusable FastAPI dependencies."""
 
+import hashlib
 from collections.abc import Generator
-
-from fastapi import Depends, Request
-from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 
 from api_service.auth import AuthenticatedClient, authenticate_api_key
 from api_service.config import APISettings, get_settings
+from api_service.db.models import User, UserSession
 from api_service.db.session import build_session_factory
 from api_service.errors import APIError
 from api_service.storage import StorageAdapter
+from fastapi import Cookie, Depends, Request
+from fastapi.responses import RedirectResponse
 from orchestrator_service.celery_app import enqueue_preprocess_job
+from sqlalchemy.orm import Session
 
 
 def get_settings_dependency() -> APISettings:
@@ -72,3 +75,50 @@ def get_authenticated_operator(
             message="Invalid operator token.",
         )
     return settings.operator_bearer_token
+
+
+def _hash_token(token: str) -> str:
+    """Return SHA-256 hex digest of a session token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def get_optional_current_user(
+    session_id: str | None = Cookie(default=None),
+    settings: APISettings = Depends(get_settings_dependency),
+    db: Session = Depends(get_db_session),
+) -> User | None:
+    """Return the authenticated User for a valid session cookie, or None."""
+    if not session_id:
+        return None
+    token_hash = _hash_token(session_id)
+    now = datetime.now(timezone.utc)
+    user_session: UserSession | None = (
+        db.query(UserSession)
+        .filter(
+            UserSession.session_token_hash == token_hash,
+            UserSession.expires_at > now,
+        )
+        .first()
+    )
+    if user_session is None:
+        return None
+    user_session.last_used_at = now
+    db.commit()
+    return (
+        db.query(User)
+        .filter(User.id == user_session.user_id, User.is_active.is_(True))
+        .first()
+    )
+
+
+def require_current_user(
+    user: User | None = Depends(get_optional_current_user),
+) -> User:
+    """Redirect to login if session is missing or expired."""
+    if user is None:
+        raise _LoginRedirect()
+    return user
+
+
+class _LoginRedirect(Exception):
+    """Sentinel used to redirect unauthenticated dashboard requests."""

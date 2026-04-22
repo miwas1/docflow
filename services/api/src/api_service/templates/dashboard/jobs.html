@@ -1,0 +1,27 @@
+<div style="margin-bottom:18px">
+  {{filter_pills}}
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Job ID</th>
+        <th>File</th>
+        <th>Status</th>
+        <th>Stage</th>
+        <th>Failure</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{job_rows}}
+    </tbody>
+  </table>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+    <div>{{prev_link}}</div>
+    <span class="muted" style="font-size:.8rem">Page {{page}}</span>
+    <div>{{next_link}}</div>
+  </div>
+</div>
