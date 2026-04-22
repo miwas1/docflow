@@ -1,0 +1,37 @@
+name: foundation-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e packages/contracts -e services/api -e services/orchestrator -e services/extractor -e services/classifier pytest
+
+      - name: Service health and queue scaffold tests
+        run: pytest services/api/tests/test_health.py services/orchestrator/tests/test_celery_app.py services/extractor/tests/test_health.py services/classifier/tests/test_health.py -q
+
+      - name: Schema and storage contract tests
+        run: pytest services/api/tests/test_foundation_schema.py services/api/tests/test_storage_keys.py -q
+
+      - name: Validate compose configuration
+        run: docker compose config
+
+      - name: Validate expected service names
+        run: grep -E "doc-platform-postgres|doc-platform-rabbitmq|doc-platform-minio|doc-platform-api|doc-platform-orchestrator|doc-platform-extractor|doc-platform-classifier" docker-compose.yml

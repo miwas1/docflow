@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "doc-platform-contracts"
+version = "0.1.0"
+description = "Shared contracts and settings for the document OCR platform"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic-settings>=2.6,<3.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/doc_platform_contracts"]

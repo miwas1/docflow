@@ -1,0 +1,12 @@
+project_name               = "doc-platform"
+environment                = "aws-dev"
+region                     = "us-east-1"
+object_storage_bucket_name = "doc-platform-artifacts-dev"
+database_instance_name     = "doc-platform-rds-dev"
+message_broker_name        = "doc-platform-amazon-mq-dev"
+broker_runtime             = "amazon-mq-rabbitmq"
+
+labels = {
+  owner       = "platform"
+  cost_center = "engineering"
+}

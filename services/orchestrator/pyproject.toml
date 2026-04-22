@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "doc-platform-orchestrator"
+version = "0.1.0"
+description = "Orchestrator service for the document OCR platform"
+requires-python = ">=3.12"
+dependencies = [
+  "celery>=5.4,<6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orchestrator_service"]

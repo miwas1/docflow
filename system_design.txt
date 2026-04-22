@@ -1,0 +1,135 @@
+a document-processing backend that happens to use ML services
+flow
+
+Client
+  -> API Gateway
+  -> Upload API
+  -> Object Storage + Job DB
+  -> Workflow Engine
+      -> Preprocess Worker
+      -> OCR Service
+      -> Classification Service
+      -> Result Writer
+      -> Webhook Worker
+  -> Dashboard / Status API
+
+Use Redis/RabbitMQ/Kafka plus workers.
+
+Flow:
+
+API writes job to DB
+API pushes message to queue
+workers consume stages
+workers update DB
+callbacks emitted at the end
+
+Wrap OCR and classifier in custom Python services.
+
+workers call remote inference services
+
+Workers handle control flow; models live behind HTTP/gRPC services.
+OCR is usually heavier and more bursty than classification, so independent scaling matters
+page-level OCR with document-level aggregation.
+
+Reason:
+
+PDFs naturally decompose into pages
+OCR latency often scales with page complexity
+page-level retries are much cheaper than redoing an entire 200-page document
+
+The tradeoff is worth it because it gives much better scaling and failure isolation.
+
+store raw + intermediate + final artifacts
+
+Store:
+
+original file
+page images
+OCR JSON
+aggregated text
+classification result
+
+full artifact lineage in object storage plus metadata in Postgres. That is the right tradeoff for a production-style system because backend reliability and explainability matter more than minimal storage cost.
+Postgres for metadata, object storage for blobs
+
+Pros
+
+standard architecture
+better scaling
+better cost and retention controls
+easier to reprocess artifacts
+
+polling/status API for dashboards and direct users
+webhooks for machine-to-machine completion events
+
+explicit routing layer / model registry
+
+Every job records:
+
+OCR model version
+classifier model version
+routing policy
+rollout bucket or tenant override
+
+Pros
+
+reproducibility
+controlled rollout
+version-aware analytics
+safer rollback
+
+shadow first for major model changes
+canary next for controlled rollout
+blue/green only for infrastructure-level swaps or very low-risk changes
+
+Because your requirement explicitly includes no-downtime model updates, canary is the best default pattern. KServe documents percentage-based canary traffic and rollback-aware rollout strategies.
+The wrong design is to log everything by job_id in metrics. That creates high-cardinality problems.
+
+The better design is:
+
+metrics for aggregates
+traces for per-job detail
+logs for event context
+DB for business state
+
+Prometheus recommends histograms for latency distributions, and current Prometheus guidance prefers native histograms for new instrumentation when supported.
+
+So I would use:
+
+Metrics
+
+upload rate
+queue depth
+page OCR latency
+classification latency
+failure rate by stage
+callback success rate
+model version request counts
+
+Tracing
+
+one trace per job
+spans for upload, preprocessing, OCR, classification, persistence, callback
+
+Logs
+
+structured logs with job_id, document_id, tenant_id, model_version
+
+This division is the right tradeoff because:
+
+metrics are cheap and alertable
+traces help debug slow or failed jobs
+logs provide operational detail without exploding metric cardinality
+
+Rich preprocessing
+deskew
+denoise
+rotate
+page splitting
+image normalization
+
+I would keep preprocessing moderate and explicit:
+
+always rasterize and normalize
+add deskew/autorotate
+do not over-engineer heavy image enhancement unless a real dataset proves it helps

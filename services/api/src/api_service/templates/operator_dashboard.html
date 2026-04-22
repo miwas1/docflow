@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Operator Dashboard</title>
+  <style>
+    :root { font-family: sans-serif; color-scheme: light; }
+    body { margin: 0; padding: 24px; background: #f6f7fb; color: #1f2937; }
+    h1, h2 { margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .panel { background: white; border: 1px solid #dbe2ea; border-radius: 12px; padding: 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+    .wide { margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb; }
+    code { background: #eef2ff; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Internal Operator Dashboard</h1>
+  <p>Use <code>/internal/operator/jobs</code> for job history and <code>/internal/operator/jobs/{job_id}</code> for drill-down details.</p>
+
+  <section class="grid">
+    <div class="panel"><h2>Queued</h2><div id="queued-count">--</div></div>
+    <div class="panel"><h2>Running</h2><div id="running-count">--</div></div>
+    <div class="panel"><h2>Completed</h2><div id="completed-count">--</div></div>
+    <div class="panel"><h2>Failed</h2><div id="failed-count">--</div></div>
+  </section>
+
+  <section class="panel wide">
+    <h2>Job History</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Status</th>
+          <th>Stage</th>
+          <th>Webhook</th>
+          <th>Failure</th>
+        </tr>
+      </thead>
+      <tbody id="job-history">
+        <tr><td colspan="5">Load data from the JSON endpoints with an operator bearer token.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel wide">
+    <h2>Stage Timeline and Diagnostics</h2>
+    <p>Open a job detail via <code>/internal/operator/jobs/{job_id}</code> to inspect stage events, classification metadata, and webhook delivery history.</p>
+  </section>
+</body>
+</html>

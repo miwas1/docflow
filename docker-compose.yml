@@ -1,0 +1,143 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: doc-platform-postgres
+    environment:
+      POSTGRES_DB: doc_platform
+      POSTGRES_USER: doc_platform
+      POSTGRES_PASSWORD: doc_platform
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doc_platform -d doc_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: doc-platform-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-18T16-25-55Z
+    container_name: doc-platform-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: python:3.12-slim
+    container_name: doc-platform-api
+    working_dir: /workspace
+    env_file:
+      - .env.example
+    volumes:
+      - ./:/workspace
+    command:
+      - /bin/sh
+      - -lc
+      - python -m pip install -e packages/contracts -e services/api && python -m uvicorn api_service.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  orchestrator:
+    image: python:3.12-slim
+    container_name: doc-platform-orchestrator
+    working_dir: /workspace
+    env_file:
+      - .env.example
+    environment:
+      EXTRACTOR_BASE_URL: http://extractor:8001
+    volumes:
+      - ./:/workspace
+    command:
+      - /bin/sh
+      - -lc
+      - python -m pip install -e packages/contracts -e services/orchestrator && celery -A orchestrator_service.celery_app:celery_app worker --loglevel=INFO --without-gossip --without-mingle
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      extractor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from orchestrator_service.celery_app import celery_app; print(celery_app.main)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  extractor:
+    image: python:3.12-slim
+    container_name: doc-platform-extractor
+    working_dir: /workspace
+    env_file:
+      - .env.example
+    volumes:
+      - ./:/workspace
+    command:
+      - /bin/sh
+      - -lc
+      - python -m pip install -e packages/contracts -e services/extractor && python -m uvicorn extractor_service.main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  classifier:
+    image: python:3.12-slim
+    container_name: doc-platform-classifier
+    working_dir: /workspace
+    env_file:
+      - .env.example
+    volumes:
+      - ./:/workspace
+    command:
+      - /bin/sh
+      - -lc
+      - python -m pip install -e packages/contracts -e services/classifier && python -m uvicorn classifier_service.main:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/healthz').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5

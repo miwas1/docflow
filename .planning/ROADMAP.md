@@ -56,6 +56,13 @@
 
 **Requirements:** EXT-01, EXT-02, EXT-03, EXT-04, EXT-05, EXT-06
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Define the normalized extracted-text contract and extraction lineage schema.
+- [ ] 03-02-PLAN.md — Implement extractor-service routing and direct-parsing adapters for digital formats.
+- [ ] 03-03-PLAN.md — Wire OCR-aware extraction through the orchestrator and update local setup docs.
+
 **Success Criteria:**
 1. Native PDFs with embedded text bypass OCR and produce normalized extracted text.
 2. DOCX, TXT, and JSON inputs are converted into the shared extracted-text representation.
@@ -71,6 +78,13 @@
 
 **Requirements:** CLS-01, CLS-02, CLS-03, CLS-04, DLV-03
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Define the canonical classification/result contract and durable persistence schema.
+- [ ] 04-02-PLAN.md — Implement the pragmatic baseline classifier service and HTTP inference contract.
+- [ ] 04-03-PLAN.md — Wire async classification, dedicated results retrieval, and Phase 4 local verification docs.
+
 **Success Criteria:**
 1. Every completed document resolves to a supported label or `unknown/other`.
 2. Results include confidence and model-version metadata.
@@ -84,6 +98,14 @@
 **Goal:** Make the platform practical to integrate and operate through webhooks, dashboard visibility, and observability.
 
 **Requirements:** DLV-04, DLV-05, OPS-03, OPS-04, OPS-05
+
+**Plans:** 4 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Define the durable webhook subscription schema and signed terminal payload contract.
+- [ ] 05-02-PLAN.md — Implement async webhook dispatch, internal delivery helpers, and bounded retry handling.
+- [ ] 05-03-PLAN.md — Add shared structured logs, metrics, and trace instrumentation across services.
+- [ ] 05-04-PLAN.md — Ship the protected internal operator dashboard and diagnostic drill-down APIs.
 
 **Success Criteria:**
 1. Signed completion webhooks are delivered with retries and bounded failure behavior.
