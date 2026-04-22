@@ -17,6 +17,10 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: doc-platform-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: doc_platform
+      RABBITMQ_DEFAULT_PASS: doc_platform
+      RABBITMQ_DEFAULT_VHOST: doc_platform
     ports:
       - "5672:5672"
       - "15672:15672"  # Management UI — restrict to your IP in the EC2 security group
