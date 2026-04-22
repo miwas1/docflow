@@ -11,11 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy shared contracts package then the service source
 COPY packages/contracts ./packages/contracts
 COPY services/api ./services/api
+COPY services/orchestrator ./services/orchestrator
 
-# Install both packages in editable mode so alembic can import api_service.db
+# Install packages in editable mode
 RUN pip install --no-cache-dir \
     -e ./packages/contracts \
-    -e ./services/api
+    -e ./services/api \
+    -e ./services/orchestrator
 
 COPY services/api/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
