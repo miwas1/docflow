@@ -35,6 +35,7 @@ def get_storage_dependency(
 
 
 def get_enqueue_upload_dependency() -> callable:
+    """Return the preprocess-job enqueue function for dependency injection."""
     return enqueue_preprocess_job
 
 

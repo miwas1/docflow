@@ -116,7 +116,7 @@ def record_extraction_completion(
     job = session.get(Job, payload.job_id)
     if job is not None:
         job.current_stage = "extracted"
-        job.status = "completed"
+        job.status = "running"  # still running — classification stage follows
     session.flush()
     session.refresh(extraction_run)
     session.refresh(artifact)

@@ -66,7 +66,7 @@ def handle_signup(
         resp = RedirectResponse("/dashboard/signup", status_code=303)
         return _flash(resp, str(exc))
     resp = RedirectResponse("/dashboard/login", status_code=303)
-    return _flash(resp, "Account created — please log in.", "success")
+    return _flash(resp, "Account created - please log in.", "success")
 
 
 # ---------------------------------------------------------------------------

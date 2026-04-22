@@ -18,6 +18,7 @@ from orchestrator_service.celery_app import (  # noqa: E402
 from orchestrator_service.config import get_settings
 from orchestrator_service.extractor_client import ExtractorClient, ExtractorClientError
 from orchestrator_service.observability import observe_task_finish, observe_task_start
+from orchestrator_service.pipeline_client import PipelineClient
 from orchestrator_service.webhook_client import WebhookClient
 
 
@@ -124,6 +125,15 @@ def build_default_webhook_client() -> WebhookClient:
     )
 
 
+def build_default_pipeline_client() -> PipelineClient:
+    """Build a PipelineClient from the current orchestrator settings."""
+    settings = get_settings()
+    return PipelineClient(
+        api_base_url=settings.api_base_url,
+        internal_service_token=settings.internal_service_token,
+    )
+
+
 def record_webhook_delivery_outcome(
     *,
     webhook_client: WebhookClient,
@@ -183,19 +193,70 @@ def _is_terminal_unsafe_input_error(message: str) -> bool:
 
 
 @celery_app.task(name="document.preprocess.accepted")
-def preprocess_accepted(*, job_id: str, document_id: str) -> dict[str, str]:
-    return {"job_id": job_id, "document_id": document_id, "status": "accepted"}
+def preprocess_accepted(*, job_id: str, document_id: str, extraction_payload: dict) -> dict[str, str]:
+    """Advance an accepted job into the extraction stage.
+
+    Receives the pre-built extraction payload (including inline file content) from the
+    API service so that the orchestrator does not require direct storage access.
+    Enqueues ``document.extract.run`` immediately and returns the accepted identifiers
+    for Celery result tracking.
+
+    Args:
+        job_id: The job ID.
+        document_id: The document ID.
+        extraction_payload: Complete extraction request dict ready for the extractor service.
+
+    Returns:
+        Dict with ``job_id``, ``document_id``, and ``status`` set to ``"extracting"``.
+    """
+    enqueue_extract_job(extraction_payload)
+    return {"job_id": job_id, "document_id": document_id, "status": "extracting"}
 
 
 @celery_app.task(name="document.extract.run")
 def run_extraction(*, payload: dict, attempt: int = 1) -> dict:
+    """Run document text extraction and advance the pipeline to classification.
+
+    On success the extraction result is persisted via the API's internal endpoint,
+    then a ``document.classify.run`` task is enqueued using the extracted text.
+    Transient failures are retried with exponential back-off; terminal unsafe-input
+    errors are re-raised immediately so the job is failed without retrying.
+
+    Args:
+        payload: Extraction request dict forwarded to the extractor service.
+        attempt: 1-based attempt counter used to select the correct retry delay.
+
+    Returns:
+        Serialised ``ExtractedTextArtifact`` dict on success, or a retrying status
+        dict when a retry has been scheduled.
+    """
     observe_task_start("document.extract", stage="extract", event_type="document.extract")
     extractor_client = build_default_extractor_client()
+    pipeline_client = build_default_pipeline_client()
     settings = get_settings()
     try:
-        result = extractor_client.run_extraction_request(payload).model_dump(mode="json")
+        extraction_result = extractor_client.run_extraction_request(payload)
+        result_dict = extraction_result.model_dump(mode="json")
+
+        # Persist the extraction result in the API service.
+        persistence_response = pipeline_client.record_extraction_complete(
+            extraction_result.job_id, result_dict
+        )
+        extracted_artifact_id = persistence_response.get("extracted_text_artifact_id", "")
+
+        # Enqueue the next pipeline stage — classification.
+        classify_payload = build_classification_request(
+            job_id=extraction_result.job_id,
+            document_id=extraction_result.document_id,
+            tenant_id=extraction_result.tenant_id,
+            source_media_type=extraction_result.source_media_type,
+            text=extraction_result.text,
+            source_artifact_ids=[extracted_artifact_id] if extracted_artifact_id else extraction_result.source_artifact_ids,
+        )
+        enqueue_classify_job(classify_payload)
+
         observe_task_finish("document.extract", outcome="success", stage="extract", event_type="document.extract")
-        return result
+        return result_dict
     except ExtractorClientError as exc:
         if _is_terminal_unsafe_input_error(str(exc)) or not _is_transient_error(str(exc)):
             observe_task_finish("document.extract", outcome="failed", stage="extract", event_type="document.extract")
@@ -211,13 +272,35 @@ def run_extraction(*, payload: dict, attempt: int = 1) -> dict:
 
 @celery_app.task(name="document.classify.run")
 def run_classification(*, payload: dict, attempt: int = 1) -> dict:
+    """Run document classification and advance the pipeline to webhook delivery.
+
+    On success the classification result is persisted via the API's internal endpoint,
+    the job is marked completed, and a ``document.webhook.deliver`` task is enqueued.
+
+    Args:
+        payload: Classification request dict forwarded to the classifier service.
+        attempt: 1-based attempt counter used to select the correct retry delay.
+
+    Returns:
+        Serialised ``DocumentClassificationResult`` dict on success, or a retrying
+        status dict when a retry has been scheduled.
+    """
     observe_task_start("document.classify", stage="classify", event_type="document.classify")
     classifier_client = build_default_classifier_client()
+    pipeline_client = build_default_pipeline_client()
     settings = get_settings()
     try:
-        result = classifier_client.run_classification_request(payload).model_dump(mode="json")
+        classification_result = classifier_client.run_classification_request(payload)
+        result_dict = classification_result.model_dump(mode="json")
+
+        # Persist the classification result and mark the job completed in the API.
+        pipeline_client.record_classification_complete(classification_result.job_id, result_dict)
+
+        # Enqueue the final pipeline stage — webhook delivery.
+        enqueue_webhook_delivery(classification_result.job_id)
+
         observe_task_finish("document.classify", outcome="success", stage="classify", event_type="document.classify")
-        return result
+        return result_dict
     except ClassifierClientError as exc:
         if _is_terminal_unsafe_input_error(str(exc)) or not _is_transient_error(str(exc)):
             observe_task_finish("document.classify", outcome="failed", stage="classify", event_type="document.classify")

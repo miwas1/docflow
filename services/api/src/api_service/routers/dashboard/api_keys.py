@@ -61,7 +61,28 @@ def api_keys_page(
 </div>
 <script>
 function copyKey() {{
-  navigator.clipboard.writeText(document.getElementById('new-key-value').innerText);
+  const text = document.getElementById('new-key-value').innerText;
+  if (navigator.clipboard && navigator.clipboard.writeText) {{
+    navigator.clipboard.writeText(text).then(() => {{
+      alert('Copied!');
+    }}).catch(err => {{
+      console.error('Failed to copy: ', err);
+      // Fallback if needed
+    }});
+  }} else {{
+    // Fallback for non-secure contexts (e.g. dev over IP without HTTPS)
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {{
+      document.execCommand('copy');
+      alert('Copied!');
+    }} catch (err) {{
+      console.error('Fallback copy failed', err);
+    }}
+    document.body.removeChild(textArea);
+  }}
 }}
 </script>"""
 

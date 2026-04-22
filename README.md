@@ -359,6 +359,21 @@ Useful checks while the stack is running:
 - verify `/internal/operator/jobs/{job_id}` shows `retry_count`, `dead_letter_reason`, and `terminal_failure_category`
 - confirm a completed job still returns `/v1/jobs/<job_id>/results` even if webhook delivery later exhausts retries
 
+### 12. Synchronous fast-path for digital documents
+
+For `text/plain`, `application/json`, `application/pdf` (digital), and `application/vnd.openxmlformats-officedocument.wordprocessingml.document` uploads the API attempts inline extraction + classification within a configurable deadline before the HTTP response is returned. If both stages complete in time the upload response will contain `status: "completed"` and the full classification result immediately. If either stage exceeds the deadline or fails, the job is transparently handed off to the Celery async queue and the response will contain `status: "queued"` instead.
+
+The following environment variables control the fast-path behaviour:
+
+| Variable | Default | Description |
+|---|---|---|
+| `SYNC_CLASSIFICATION_ENABLED` | `true` | Enable/disable the sync fast-path. Set to `false` to always use the async queue. |
+| `SYNC_CLASSIFICATION_TIMEOUT_SECONDS` | `20` | Total wall-clock deadline (seconds) shared between extractor and classifier calls. |
+| `EXTRACTOR_BASE_URL` | `http://localhost:8001` | Base URL the API uses to reach the extractor service. In Docker Compose this must be `http://extractor:8001`. |
+| `CLASSIFIER_BASE_URL` | `http://localhost:8002` | Base URL the API uses to reach the classifier service. In Docker Compose this must be `http://classifier:8002`. |
+
+These are already pre-configured in `docker-compose.yml` for local development. When deploying to EC2 or another environment, ensure the API container can resolve the extractor and classifier hostnames.
+
 ## Repository Layout
 
 - `services/api` contains the HTTP-facing API service, persistence ownership, and storage adapter stubs.

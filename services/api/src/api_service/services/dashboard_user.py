@@ -141,7 +141,7 @@ def list_jobs_for_user(
     client_ids_query = (
         session.query(_APIClient.client_id)
         .filter(_APIClient.user_id == user_id)
-        .subquery()
+        .scalar_subquery()
     )
     query = session.query(Job).filter(Job.client_id.in_(client_ids_query))
     if status_filter:

@@ -16,6 +16,10 @@ class AcceptedUploadResponse(BaseModel):
     document_id: str
     status: str
     current_stage: str
+    # Populated only when the synchronous fast-path completes inline.
+    # Clients should check ``status == "completed"`` before reading these fields.
+    extracted_text: str | None = None
+    classification: "ClassificationMetadataResponse | None" = None
 
 
 class FailureResponse(BaseModel):

@@ -1,11 +1,16 @@
 """Upload acceptance and idempotent ingestion flow."""
 
+import base64
 from collections.abc import Callable
 import json
 from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 from zipfile import BadZipFile, ZipFile
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from api_service.services.sync_pipeline import SyncPipelineResult
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -19,9 +24,17 @@ from api_service.repositories.jobs import (
     create_job,
     create_job_event,
     get_job_by_idempotency_key,
+    record_extraction_completion,
+    record_classification_completion,
 )
-from api_service.schemas import AcceptedUploadResponse
+from api_service.schemas import AcceptedUploadResponse, ClassificationMetadataResponse
+from api_service.services.sync_pipeline import (
+    SYNC_ELIGIBLE_MEDIA_TYPES,
+    SyncPipelineError,
+    run_sync_pipeline,
+)
 from api_service.storage import StorageAdapter
+from doc_platform_contracts.storage_keys import build_storage_key
 
 SUPPORTED_CONTENT_TYPES = {
     "application/pdf",
@@ -32,7 +45,7 @@ SUPPORTED_CONTENT_TYPES = {
     "application/json",
 }
 
-EnqueueUploadJob = Callable[[str, str], None]
+EnqueueUploadJob = Callable[[str, str, dict], None]
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 JPEG_SIGNATURE = b"\xff\xd8"
@@ -200,10 +213,11 @@ def ingest_upload(
             },
         ),
     )
+    source_artifact_id = str(uuid4())
     create_artifact(
         session,
         Artifact(
-            id=str(uuid4()),
+            id=source_artifact_id,
             job_id=job_id,
             artifact_type="original",
             stage=stage,
@@ -214,7 +228,64 @@ def ingest_upload(
     )
     session.commit()
 
-    enqueue_upload_job(job_id, document_id)
+    extraction_payload = {
+        "job_id": job_id,
+        "document_id": document_id,
+        "tenant_id": client.client_id,
+        "source_media_type": upload_file.content_type,
+        "source_filename": filename,
+        "source_artifact_id": source_artifact_id,
+        "inline_content_base64": base64.b64encode(content).decode("utf-8"),
+    }
+
+    # ------------------------------------------------------------------
+    # Synchronous fast-path: attempt inline extraction + classification.
+    # Falls back to the async Celery queue on timeout or any failure.
+    # ------------------------------------------------------------------
+    if (
+        settings.sync_classification_enabled
+        and upload_file.content_type in SYNC_ELIGIBLE_MEDIA_TYPES
+    ):
+        try:
+            sync_result = run_sync_pipeline(
+                job_id=job_id,
+                document_id=document_id,
+                tenant_id=client.client_id,
+                source_media_type=upload_file.content_type,
+                source_filename=filename,
+                source_artifact_id=source_artifact_id,
+                content=content,
+                extractor_base_url=settings.extractor_base_url,
+                classifier_base_url=settings.classifier_base_url,
+                timeout_seconds=settings.sync_classification_timeout_seconds,
+            )
+            # Both stages succeeded — persist and return completed response.
+            _persist_sync_results(session, sync_result=sync_result, tenant_id=client.client_id)
+            cls = sync_result.classification
+            return AcceptedUploadResponse(
+                job_id=job_id,
+                document_id=document_id,
+                status="completed",
+                current_stage="classified",
+                extracted_text=sync_result.extraction.text,
+                classification=ClassificationMetadataResponse(
+                    final_label=cls.final_label,
+                    confidence=cls.confidence,
+                    low_confidence_policy=cls.low_confidence_policy,
+                    threshold_applied=cls.threshold_applied,
+                    candidate_labels=[
+                        {"label": c.label, "score": c.score}
+                        for c in cls.candidate_labels
+                    ],
+                    model=cls.produced_by.model,
+                    version=cls.produced_by.version,
+                ),
+            )
+        except SyncPipelineError:
+            # Timeout or service failure — fall through to async queue.
+            pass
+
+    enqueue_upload_job(job_id, document_id, extraction_payload)
 
     return AcceptedUploadResponse(
         job_id=job_id,
@@ -222,3 +293,47 @@ def ingest_upload(
         status="queued",
         current_stage=stage,
     )
+
+
+def _persist_sync_results(
+    session: Session,
+    *,
+    sync_result: "SyncPipelineResult",
+    tenant_id: str,
+) -> None:
+    """Persist extraction and classification artifacts for a completed sync run.
+
+    Called only when both extractor and classifier responded successfully.
+    Commits the session so the job is immediately visible as ``completed``.
+
+    Args:
+        session: Active SQLAlchemy session.
+        sync_result: Completed fast-path result containing both domain objects.
+        tenant_id: Tenant ID used to build storage keys.
+    """
+    extraction_storage_key = build_storage_key(
+        tenant_id=tenant_id,
+        job_id=sync_result.extraction.job_id,
+        stage="extracted",
+        artifact_type="extracted-text",
+        filename="text.json",
+    )
+    record_extraction_completion(
+        session,
+        payload=sync_result.extraction,
+        storage_key=extraction_storage_key,
+    )
+
+    classification_storage_key = build_storage_key(
+        tenant_id=tenant_id,
+        job_id=sync_result.classification.job_id,
+        stage="classified",
+        artifact_type="classification-result",
+        filename="result.json",
+    )
+    record_classification_completion(
+        session,
+        payload=sync_result.classification,
+        storage_key=classification_storage_key,
+    )
+    session.commit()

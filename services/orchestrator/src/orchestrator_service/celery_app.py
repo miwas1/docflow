@@ -23,10 +23,18 @@ celery_app.conf.update(
 )
 
 
-def enqueue_preprocess_job(job_id: str, document_id: str) -> None:
+def enqueue_preprocess_job(job_id: str, document_id: str, extraction_payload: dict) -> None:
+    """Enqueue the initial preprocess-acceptance task for a newly uploaded document.
+
+    Args:
+        job_id: The job ID assigned at upload time.
+        document_id: The document ID assigned at upload time.
+        extraction_payload: Pre-built extraction request dict (includes
+            ``inline_content_base64``) so the orchestrator does not need storage access.
+    """
     celery_app.send_task(
         "document.preprocess.accepted",
-        kwargs={"job_id": job_id, "document_id": document_id},
+        kwargs={"job_id": job_id, "document_id": document_id, "extraction_payload": extraction_payload},
         queue=QUEUE_NAMES[0],
     )
 

@@ -40,6 +40,10 @@ from api_service.services.operator_dashboard import (
     get_operator_job_detail,
     list_operator_jobs,
 )
+from api_service.services.pipeline import (
+    handle_extraction_complete,
+    handle_classification_complete,
+)
 from api_service.services.results import get_job_results
 from api_service.services.status import get_job_status
 from api_service.services.webhooks import (
@@ -47,6 +51,8 @@ from api_service.services.webhooks import (
     record_webhook_delivery_outcome,
 )
 from api_service.storage import StorageAdapter
+from doc_platform_contracts.classification import DocumentClassificationResult
+from doc_platform_contracts.extraction import ExtractedTextArtifact
 from fastapi import Depends, FastAPI, File, Header, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -139,6 +145,34 @@ def create_app() -> FastAPI:
             delivery_id=delivery_id,
             outcome=outcome,
         )
+
+    @app.post("/internal/pipeline/jobs/{job_id}/extraction-complete")
+    def pipeline_extraction_complete(
+        job_id: str,
+        payload: ExtractedTextArtifact,
+        _: str = Depends(get_internal_service_token),
+        session: Session = Depends(get_db_session),
+    ) -> dict:
+        """Persist extraction results and advance the job to the extracted stage.
+
+        Called by the orchestrator after ``document.extract.run`` succeeds.
+        Authentication: internal service bearer token only.
+        """
+        return handle_extraction_complete(session, payload=payload)
+
+    @app.post("/internal/pipeline/jobs/{job_id}/classification-complete")
+    def pipeline_classification_complete(
+        job_id: str,
+        payload: DocumentClassificationResult,
+        _: str = Depends(get_internal_service_token),
+        session: Session = Depends(get_db_session),
+    ) -> dict:
+        """Persist classification results and mark the job as completed.
+
+        Called by the orchestrator after ``document.classify.run`` succeeds.
+        Authentication: internal service bearer token only.
+        """
+        return handle_classification_complete(session, payload=payload)
 
     @app.get("/internal/operator/jobs")
     def fetch_operator_jobs(

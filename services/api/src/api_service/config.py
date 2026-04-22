@@ -33,6 +33,24 @@ class APISettings(BasePlatformSettings):
     session_expire_seconds: int = Field(
         default=2_592_000, alias="SESSION_EXPIRE_SECONDS"
     )
+    # ---------------------------------------------------------------------------
+    # Synchronous fast-path settings
+    # Eligible types: text/plain, application/json, application/pdf, docx.
+    # Images (png, jpeg) always use the async OCR path.
+    # If the sync call exceeds the timeout, the job falls back to the async queue.
+    # ---------------------------------------------------------------------------
+    sync_classification_enabled: bool = Field(
+        default=True, alias="SYNC_CLASSIFICATION_ENABLED"
+    )
+    sync_classification_timeout_seconds: float = Field(
+        default=20.0, alias="SYNC_CLASSIFICATION_TIMEOUT_SECONDS"
+    )
+    extractor_base_url: str = Field(
+        default="http://localhost:8001", alias="EXTRACTOR_BASE_URL"
+    )
+    classifier_base_url: str = Field(
+        default="http://localhost:8002", alias="CLASSIFIER_BASE_URL"
+    )
 
 
 @lru_cache(maxsize=1)
