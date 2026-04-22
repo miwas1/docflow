@@ -11,11 +11,16 @@ from io import BytesIO
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
-from pydantic import BaseModel
-
-from doc_platform_contracts.extraction import ExtractedTextArtifact, ExtractionPage, ExtractionTrace
-
+import numpy as np
+from doc_platform_contracts.extraction import (
+    ExtractedTextArtifact,
+    ExtractionPage,
+    ExtractionTrace,
+)
 from extractor_service.config import ExtractorSettings, get_settings
+from pdf2image import convert_from_bytes
+from PIL import Image
+from pydantic import BaseModel
 
 PDF_TEXT_PATTERN = re.compile(rb"\(([^()]*)\)")
 WORD_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -30,6 +35,20 @@ SUPPORTED_MEDIA_TYPES = {
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 JPEG_SIGNATURE = b"\xff\xd8"
 PDF_SIGNATURE = b"%PDF-"
+
+_ocr_engine = None
+
+
+def _get_ocr_engine():
+    """Lazy-initialize and cache the PaddleOCR engine (CPU, English, angle classification)."""
+    global _ocr_engine
+    if _ocr_engine is None:
+        from paddleocr import PaddleOCR
+
+        _ocr_engine = PaddleOCR(
+            use_angle_cls=True, lang="en", use_gpu=False, show_log=False
+        )
+    return _ocr_engine
 
 
 class ExtractionRequest(BaseModel):
@@ -52,15 +71,23 @@ class ExtractionResult:
 
 
 class ExtractionError(Exception):
-    def __init__(self, *, error_code: str, message: str, status_code: int = 400) -> None:
+    def __init__(
+        self, *, error_code: str, message: str, status_code: int = 400
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.message = message
         self.status_code = status_code
 
 
-def run_extraction(request: ExtractionRequest | dict, settings: ExtractorSettings | None = None) -> ExtractedTextArtifact:
-    parsed_request = request if isinstance(request, ExtractionRequest) else ExtractionRequest.model_validate(request)
+def run_extraction(
+    request: ExtractionRequest | dict, settings: ExtractorSettings | None = None
+) -> ExtractedTextArtifact:
+    parsed_request = (
+        request
+        if isinstance(request, ExtractionRequest)
+        else ExtractionRequest.model_validate(request)
+    )
     settings = settings or get_settings()
     content = base64.b64decode(parsed_request.inline_content_base64)
 
@@ -73,7 +100,10 @@ def run_extraction(request: ExtractionRequest | dict, settings: ExtractorSetting
     if parsed_request.source_media_type == "application/pdf":
         validate_pdf_content(content)
         result = extract_pdf(content, parsed_request.source_artifact_id, settings)
-    elif parsed_request.source_media_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    elif (
+        parsed_request.source_media_type
+        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
         result = extract_docx(content, parsed_request.source_artifact_id)
     elif parsed_request.source_media_type == "text/plain":
         result = extract_text(content, parsed_request.source_artifact_id)
@@ -81,7 +111,7 @@ def run_extraction(request: ExtractionRequest | dict, settings: ExtractorSetting
         result = extract_json(content, parsed_request.source_artifact_id)
     else:
         validate_image_content(content, parsed_request.source_media_type)
-        result = build_ocr_placeholder(parsed_request.source_artifact_id)
+        result = run_ocr_on_image(content, parsed_request.source_artifact_id)
 
     return ExtractedTextArtifact(
         job_id=parsed_request.job_id,
@@ -97,14 +127,16 @@ def run_extraction(request: ExtractionRequest | dict, settings: ExtractorSetting
         source_artifact_ids=[page.source_artifact_id for page in result.pages],
         produced_by=ExtractionTrace(
             provider="extractor-service",
-            model="heuristic-router",
+            model="paddleocr",
             version="0.1.0",
         ),
         created_at=datetime.now(UTC),
     )
 
 
-def extract_pdf(content: bytes, source_artifact_id: str, settings: ExtractorSettings) -> ExtractionResult:
+def extract_pdf(
+    content: bytes, source_artifact_id: str, settings: ExtractorSettings
+) -> ExtractionResult:
     matches = PDF_TEXT_PATTERN.findall(content)
     extracted = " ".join(
         match.decode("utf-8", errors="ignore").strip()
@@ -117,15 +149,13 @@ def extract_pdf(content: bytes, source_artifact_id: str, settings: ExtractorSett
             extraction_path="direct",
             fallback_used=False,
             fallback_reason=None,
-            pages=[ExtractionPage(page_number=1, text=extracted, source_artifact_id=source_artifact_id)],
+            pages=[
+                ExtractionPage(
+                    page_number=1, text=extracted, source_artifact_id=source_artifact_id
+                )
+            ],
         )
-    return ExtractionResult(
-        text="",
-        extraction_path="ocr",
-        fallback_used=True,
-        fallback_reason="embedded_text_unusable",
-        pages=[ExtractionPage(page_number=1, text="", source_artifact_id=source_artifact_id)],
-    )
+    return run_ocr_on_pdf(content, source_artifact_id)
 
 
 def validate_pdf_content(content: bytes) -> None:
@@ -182,7 +212,11 @@ def extract_docx(content: bytes, source_artifact_id: str) -> ExtractionResult:
         extraction_path="direct",
         fallback_used=False,
         fallback_reason=None,
-        pages=[ExtractionPage(page_number=1, text=text, source_artifact_id=source_artifact_id)],
+        pages=[
+            ExtractionPage(
+                page_number=1, text=text, source_artifact_id=source_artifact_id
+            )
+        ],
     )
 
 
@@ -193,7 +227,11 @@ def extract_text(content: bytes, source_artifact_id: str) -> ExtractionResult:
         extraction_path="direct",
         fallback_used=False,
         fallback_reason=None,
-        pages=[ExtractionPage(page_number=1, text=text, source_artifact_id=source_artifact_id)],
+        pages=[
+            ExtractionPage(
+                page_number=1, text=text, source_artifact_id=source_artifact_id
+            )
+        ],
     )
 
 
@@ -205,15 +243,66 @@ def extract_json(content: bytes, source_artifact_id: str) -> ExtractionResult:
         extraction_path="direct",
         fallback_used=False,
         fallback_reason=None,
-        pages=[ExtractionPage(page_number=1, text=text, source_artifact_id=source_artifact_id)],
+        pages=[
+            ExtractionPage(
+                page_number=1, text=text, source_artifact_id=source_artifact_id
+            )
+        ],
     )
 
 
-def build_ocr_placeholder(source_artifact_id: str) -> ExtractionResult:
+def run_ocr_on_image(content: bytes, source_artifact_id: str) -> ExtractionResult:
+    """Run PaddleOCR on a single image and return a normalized extraction result."""
+    image = Image.open(BytesIO(content)).convert("RGB")
+    img_array = np.array(image)
+    result = _get_ocr_engine().ocr(img_array, cls=True)
+    lines = [
+        line[1][0]
+        for page in (result or [])
+        for line in (page or [])
+        if line and len(line) >= 2
+    ]
+    text = "\n".join(lines)
     return ExtractionResult(
-        text="",
+        text=text,
         extraction_path="ocr",
         fallback_used=False,
         fallback_reason=None,
-        pages=[ExtractionPage(page_number=1, text="", source_artifact_id=source_artifact_id)],
+        pages=[
+            ExtractionPage(
+                page_number=1, text=text, source_artifact_id=source_artifact_id
+            )
+        ],
+    )
+
+
+def run_ocr_on_pdf(content: bytes, source_artifact_id: str) -> ExtractionResult:
+    """Convert a scanned/image PDF to page images via pdf2image and run PaddleOCR on each page."""
+    ocr_engine = _get_ocr_engine()
+    pil_images = convert_from_bytes(content)
+    pages = []
+    all_text_parts = []
+    for i, pil_image in enumerate(pil_images):
+        img_array = np.array(pil_image.convert("RGB"))
+        result = ocr_engine.ocr(img_array, cls=True)
+        lines = [
+            line[1][0]
+            for page in (result or [])
+            for line in (page or [])
+            if line and len(line) >= 2
+        ]
+        page_text = "\n".join(lines)
+        all_text_parts.append(page_text)
+        pages.append(
+            ExtractionPage(
+                page_number=i + 1, text=page_text, source_artifact_id=source_artifact_id
+            )
+        )
+    full_text = "\n\n".join(all_text_parts)
+    return ExtractionResult(
+        text=full_text,
+        extraction_path="ocr",
+        fallback_used=True,
+        fallback_reason="embedded_text_unusable",
+        pages=pages,
     )

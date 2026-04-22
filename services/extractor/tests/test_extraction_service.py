@@ -1,12 +1,18 @@
 import base64
+import io
 import json
 from io import BytesIO
+from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
 import pytest
-
-from extractor_service.extraction import ExtractionError, ExtractionRequest, run_extraction
+from extractor_service.extraction import (
+    ExtractionError,
+    ExtractionRequest,
+    run_extraction,
+)
 from extractor_service.main import app
+from PIL import Image as PILImage
 
 
 def build_pdf_bytes(text: str) -> bytes:
@@ -54,11 +60,13 @@ def build_request(*, media_type: str, filename: str, content: bytes) -> dict:
 
 
 def test_run_extraction_uses_direct_path_for_pdf_with_embedded_text() -> None:
-    result = run_extraction(build_request(
-        media_type="application/pdf",
-        filename="sample.pdf",
-        content=build_pdf_bytes("Invoice Number 42"),
-    ))
+    result = run_extraction(
+        build_request(
+            media_type="application/pdf",
+            filename="sample.pdf",
+            content=build_pdf_bytes("Invoice Number 42"),
+        )
+    )
 
     assert result.extraction_path == "direct"
     assert result.fallback_used is False
@@ -66,33 +74,52 @@ def test_run_extraction_uses_direct_path_for_pdf_with_embedded_text() -> None:
 
 
 def test_run_extraction_falls_back_to_ocr_for_pdf_without_usable_text() -> None:
-    result = run_extraction(build_request(
-        media_type="application/pdf",
-        filename="scan.pdf",
-        content=b"%PDF-1.4\n%%EOF",
-    ))
+    mock_pil = PILImage.new("RGB", (10, 10))
+    mock_ocr = MagicMock()
+    mock_ocr.ocr.return_value = [[[None, ("Scanned invoice text", 0.97)]]]
+
+    with (
+        patch(
+            "extractor_service.extraction.convert_from_bytes", return_value=[mock_pil]
+        ),
+        patch("extractor_service.extraction._get_ocr_engine", return_value=mock_ocr),
+    ):
+        result = run_extraction(
+            build_request(
+                media_type="application/pdf",
+                filename="scan.pdf",
+                content=b"%PDF-1.4\n%%EOF",
+            )
+        )
 
     assert result.extraction_path == "ocr"
     assert result.fallback_used is True
     assert result.fallback_reason == "embedded_text_unusable"
+    assert result.text == "Scanned invoice text"
 
 
 def test_run_extraction_normalizes_docx_txt_and_json_inputs() -> None:
-    docx_result = run_extraction(build_request(
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename="sample.docx",
-        content=build_docx_bytes("Hello DOCX"),
-    ))
-    txt_result = run_extraction(build_request(
-        media_type="text/plain",
-        filename="sample.txt",
-        content=b"Hello TXT",
-    ))
-    json_result = run_extraction(build_request(
-        media_type="application/json",
-        filename="sample.json",
-        content=b'{"b": 2, "a": 1}',
-    ))
+    docx_result = run_extraction(
+        build_request(
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename="sample.docx",
+            content=build_docx_bytes("Hello DOCX"),
+        )
+    )
+    txt_result = run_extraction(
+        build_request(
+            media_type="text/plain",
+            filename="sample.txt",
+            content=b"Hello TXT",
+        )
+    )
+    json_result = run_extraction(
+        build_request(
+            media_type="application/json",
+            filename="sample.json",
+            content=b'{"b": 2, "a": 1}',
+        )
+    )
 
     assert docx_result.text == "Hello DOCX"
     assert txt_result.text == "Hello TXT"
@@ -116,6 +143,29 @@ def test_extraction_endpoint_returns_normalized_payload() -> None:
     assert payload["extraction_path"] == "direct"
     assert payload["page_count"] == 1
     assert payload["source_artifact_ids"] == ["artifact-source-1"]
+
+
+def test_run_extraction_uses_paddleocr_for_images() -> None:
+    buf = io.BytesIO()
+    PILImage.new("RGB", (32, 32)).save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    mock_ocr = MagicMock()
+    mock_ocr.ocr.return_value = [[[None, ("Total Due 100", 0.98)]]]
+
+    with patch("extractor_service.extraction._get_ocr_engine", return_value=mock_ocr):
+        result = run_extraction(
+            build_request(
+                media_type="image/png",
+                filename="scan.png",
+                content=png_bytes,
+            )
+        )
+
+    assert result.extraction_path == "ocr"
+    assert result.fallback_used is False
+    assert result.text == "Total Due 100"
+    assert result.page_count == 1
 
 
 def test_extraction_endpoint_rejects_unsupported_media_type() -> None:

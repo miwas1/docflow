@@ -15,9 +15,9 @@ Uploads still enter the system through the Phase 2 upload contract. The orchestr
 ## Routing Rules
 
 - `application/pdf` tries embedded text first.
-- PDFs with unusable embedded text switch to OCR with `fallback_reason="embedded_text_unusable"`.
+- PDFs with unusable embedded text fall back to OCR via **PaddleOCR** (after converting pages to images with `pdf2image`). The fallback is recorded as `fallback_reason="embedded_text_unusable"`.
 - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `text/plain`, and `application/json` use direct parsing.
-- `image/png` and `image/jpeg` are OCR-first inputs.
+- `image/png` and `image/jpeg` are OCR-first inputs processed directly by **PaddleOCR**.
 
 Stable terminal extractor failure codes for unsafe inputs:
 
