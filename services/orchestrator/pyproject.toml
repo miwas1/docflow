@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "doc-platform-orchestrator"
 version = "0.1.0"
 description = "Orchestrator service for the document OCR platform"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
   "celery>=5.4,<6.0",
 ]
