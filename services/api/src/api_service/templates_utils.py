@@ -1,7 +1,8 @@
 """Robust template path discovery for the API service."""
 
-import api_service
 from pathlib import Path
+
+import api_service
 
 # Always resolve templates relative to the api_service package root
 _PKG_PATH = Path(api_service.__file__).parent

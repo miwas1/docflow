@@ -31,8 +31,11 @@ def signup_user(
 ) -> User:
     """Create a new user account.
 
-    Raises ValueError if the email is already registered.
+    Raises ValueError if the email is already registered or the password
+    exceeds bcrypt's 72-byte hard limit.
     """
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must not exceed 72 characters.")
     password_hash = _pwd_context.hash(password)
     try:
         user = create_user(

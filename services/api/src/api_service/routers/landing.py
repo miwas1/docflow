@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
+import api_service
 from api_service.templates_utils import get_template_text
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-import api_service
 _TEMPLATES_PATH = Path(api_service.__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_PATH))
 
