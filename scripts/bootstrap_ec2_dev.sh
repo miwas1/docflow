@@ -121,7 +121,7 @@ download_model_snapshot() {
     -e HF_HOME=/hf-cache \
     -e MODEL_NAME="$model_name" \
     -v "${cache_dir}:/hf-cache" \
-    python:3.13-slim \
+    python:3.12-slim \
     bash -lc "pip install --quiet 'huggingface_hub>=0.31,<1.0' && python -c \"import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id=os.environ['MODEL_NAME'], cache_dir=os.environ['HF_HOME'])\""
 }
 
