@@ -1,0 +1,891 @@
+{
+  "info": {
+    "name": "Document OCR & Classification Platform",
+    "description": "Complete API collection for the Document OCR and Classification Platform. Covers public ingestion endpoints, job status polling, results retrieval, internal webhook dispatch endpoints, and the operator dashboard.\n\n## Setup\n1. Set the `base_url` variable to your running API (default: `http://localhost:8000`).\n2. Set `api_key` to a valid client API key (`X-API-Key` header).\n3. Set `internal_service_token` for internal webhook endpoints.\n4. Set `operator_bearer_token` for operator dashboard endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL of the running API service."
+    },
+    {
+      "key": "api_key",
+      "value": "demo-secret-key",
+      "type": "string",
+      "description": "Client API key sent via X-API-Key header."
+    },
+    {
+      "key": "internal_service_token",
+      "value": "internal-secret",
+      "type": "string",
+      "description": "Bearer token for internal service endpoints (/internal/webhooks/*)."
+    },
+    {
+      "key": "operator_bearer_token",
+      "value": "operator-secret",
+      "type": "string",
+      "description": "Bearer token for operator dashboard endpoints (/internal/operator/*)."
+    },
+    {
+      "key": "job_id",
+      "value": "",
+      "type": "string",
+      "description": "Job ID returned from document upload. Populated automatically by the Upload Document test script."
+    },
+    {
+      "key": "document_id",
+      "value": "",
+      "type": "string",
+      "description": "Document ID returned from document upload. Populated automatically by the Upload Document test script."
+    },
+    {
+      "key": "delivery_id",
+      "value": "",
+      "type": "string",
+      "description": "Webhook delivery ID returned from the dispatch endpoint. Populated automatically by the Get Dispatch Payload test script."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Liveness and readiness checks.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": ["{{base_url}}"],
+              "path": ["healthz"]
+            },
+            "description": "Returns service liveness status. No authentication required."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/healthz",
+                  "host": ["{{base_url}}"],
+                  "path": ["healthz"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"status\": \"ok\",\n  \"service\": \"api\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has status ok', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('ok');",
+                  "    pm.expect(json.service).to.eql('api');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Public API — v1",
+      "description": "External client endpoints for submitting documents, polling job status, and fetching results.\n\nAuthentication: `X-API-Key` header.",
+      "item": [
+        {
+          "name": "Upload Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Client API key."
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-test-{{$guid}}",
+                "description": "Optional idempotency token. Requests with the same key return the same job/document IDs.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Document file to process. Supported: PDF, DOCX, TXT, JSON. Max 10 MB."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/documents:upload",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "documents:upload"]
+            },
+            "description": "Submit a document for asynchronous text extraction and classification.\n\n**Supported file types:** PDF, DOCX, TXT, JSON\n**Max size:** 10 MB (configurable)\n\nReturns a `job_id` and `document_id` to track progress via the polling and results endpoints.\n\n**Error codes:**\n- `unsupported_media_type` (415): File type not accepted.\n- `unsafe_input_type_mismatch` (422): File signature does not match declared MIME type.\n- `encrypted_pdf` (422): PDF is password-protected.\n- `unauthorized` (401): Missing or invalid API key."
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{"key": "file", "type": "file", "src": []}]
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/documents:upload",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "documents:upload"]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n  \"status\": \"queued\",\n  \"current_stage\": \"accepted\"\n}"
+            },
+            {
+              "name": "401 Unauthorized — Missing API Key",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{"key": "file", "type": "file", "src": []}]
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/documents:upload",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "documents:upload"]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"unauthorized\",\n  \"message\": \"Missing API key\"\n}"
+            },
+            {
+              "name": "415 Unsupported Media Type",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{"key": "file", "type": "file", "src": []}]
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/documents:upload",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "documents:upload"]
+                }
+              },
+              "status": "Unsupported Media Type",
+              "code": 415,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"unsupported_media_type\",\n  \"message\": \"File type not supported.\"\n}"
+            },
+            {
+              "name": "422 Unprocessable Entity — Type Mismatch",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{"key": "file", "type": "file", "src": []}]
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/documents:upload",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "documents:upload"]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"unsafe_input_type_mismatch\",\n  \"message\": \"File signature does not match declared media type.\"\n}"
+            },
+            {
+              "name": "422 Unprocessable Entity — Encrypted PDF",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{"key": "file", "type": "file", "src": []}]
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/documents:upload",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "documents:upload"]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"encrypted_pdf\",\n  \"message\": \"PDF is encrypted and cannot be processed.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "pm.test('Response contains job_id and document_id', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('job_id');",
+                  "    pm.expect(json).to.have.property('document_id');",
+                  "    pm.expect(json.status).to.eql('queued');",
+                  "    pm.expect(json.current_stage).to.eql('accepted');",
+                  "    // Persist IDs for downstream requests",
+                  "    pm.collectionVariables.set('job_id', json.job_id);",
+                  "    pm.collectionVariables.set('document_id', json.document_id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll Job Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Client API key."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "jobs", "{{job_id}}"]
+            },
+            "description": "Poll the current lifecycle status of a submitted job.\n\nReturns status (`queued`, `running`, `completed`, `failed`) and stage (`accepted`, `extracting`, `classifying`, `classified`).\n\nDoes **not** include extracted text or classification results — use the `/results` endpoint once the job is `completed`.\n\n**Error codes:**\n- `unauthorized` (401): Missing or invalid API key.\n- `404 Not Found`: Job not found for this client."
+          },
+          "response": [
+            {
+              "name": "200 OK — Running",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/{{job_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "{{job_id}}"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n  \"status\": \"running\",\n  \"current_stage\": \"extracting\",\n  \"created_at\": \"2026-04-22T10:00:00Z\",\n  \"updated_at\": \"2026-04-22T10:00:05Z\",\n  \"accepted_at\": \"2026-04-22T10:00:00Z\",\n  \"failure\": null\n}"
+            },
+            {
+              "name": "200 OK — Completed",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/{{job_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "{{job_id}}"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n  \"status\": \"completed\",\n  \"current_stage\": \"classified\",\n  \"created_at\": \"2026-04-22T10:00:00Z\",\n  \"updated_at\": \"2026-04-22T10:00:30Z\",\n  \"accepted_at\": \"2026-04-22T10:00:00Z\",\n  \"failure\": null\n}"
+            },
+            {
+              "name": "200 OK — Failed",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/{{job_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "{{job_id}}"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n  \"status\": \"failed\",\n  \"current_stage\": \"extracting\",\n  \"created_at\": \"2026-04-22T10:00:00Z\",\n  \"updated_at\": \"2026-04-22T10:01:00Z\",\n  \"accepted_at\": \"2026-04-22T10:00:00Z\",\n  \"failure\": {\n    \"code\": \"ocr_timeout\",\n    \"message\": \"OCR processing timed out.\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/nonexistent-job-id",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "nonexistent-job-id"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"Job not found.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response contains required fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('job_id');",
+                  "    pm.expect(json).to.have.property('document_id');",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('current_stage');",
+                  "    pm.expect(['queued','running','completed','failed']).to.include(json.status);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Job Results",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Client API key."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/jobs/{{job_id}}/results",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "jobs", "{{job_id}}", "results"]
+            },
+            "description": "Retrieve extracted text and classification results for a completed job.\n\nOnly available when `status` is `completed`. Returns `409 Conflict` with `results_not_ready` if the job is still processing.\n\nResults remain accessible even if webhook delivery ultimately failed.\n\n**Error codes:**\n- `results_not_ready` (409): Job not yet completed.\n- `unauthorized` (401): Missing or invalid API key.\n- `404 Not Found`: Job not found for this client."
+          },
+          "response": [
+            {
+              "name": "200 OK — Results",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/{{job_id}}/results",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "{{job_id}}", "results"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n  \"status\": \"completed\",\n  \"extracted_text\": \"Invoice\\n\\nBill To: Acme Corp\\nDate: 2026-04-01\\nAmount: $1,250.00\",\n  \"classification\": {\n    \"final_label\": \"invoice\",\n    \"confidence\": 0.97,\n    \"low_confidence_policy\": \"threshold_to_unknown_other\",\n    \"threshold_applied\": 0.6,\n    \"candidate_labels\": [\n      {\"label\": \"invoice\", \"score\": 0.97},\n      {\"label\": \"receipt\", \"score\": 0.02},\n      {\"label\": \"other\", \"score\": 0.01}\n    ],\n    \"model\": \"baseline-keyword\",\n    \"version\": \"0.1.0\"\n  },\n  \"artifacts\": [\n    {\"artifact_type\": \"original\", \"stage\": \"accepted\", \"storage_key\": \"originals/7cb45a12/document.pdf\"},\n    {\"artifact_type\": \"extracted-text\", \"stage\": \"extracted\", \"storage_key\": \"extractions/7cb45a12/text.txt\"},\n    {\"artifact_type\": \"classification-result\", \"stage\": \"classified\", \"storage_key\": \"classifications/7cb45a12/result.json\"}\n  ],\n  \"completed_at\": \"2026-04-22T10:00:30Z\"\n}"
+            },
+            {
+              "name": "409 Conflict — Results Not Ready",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/{{job_id}}/results",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "{{job_id}}", "results"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"results_not_ready\",\n  \"message\": \"Job is still processing. Poll /v1/jobs/{job_id} for status.\"\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-API-Key", "value": "{{api_key}}"}],
+                "url": {
+                  "raw": "{{base_url}}/v1/jobs/nonexistent-job-id/results",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "jobs", "nonexistent-job-id", "results"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"Job not found.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Status code is 200', function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "    pm.test('Response contains extraction and classification', function () {",
+                  "        const json = pm.response.json();",
+                  "        pm.expect(json).to.have.property('extracted_text');",
+                  "        pm.expect(json).to.have.property('classification');",
+                  "        pm.expect(json.classification).to.have.property('final_label');",
+                  "        pm.expect(json.classification).to.have.property('confidence');",
+                  "        pm.expect(json).to.have.property('artifacts');",
+                  "    });",
+                  "} else if (pm.response.code === 409) {",
+                  "    pm.test('Not ready — error_code is results_not_ready', function () {",
+                  "        const json = pm.response.json();",
+                  "        pm.expect(json.error_code).to.eql('results_not_ready');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Internal — Webhook Dispatch",
+      "description": "Internal endpoints used by the orchestrator service to retrieve webhook payloads and record delivery outcomes.\n\nAuthentication: `Authorization: Bearer <internal_service_token>`",
+      "item": [
+        {
+          "name": "Get Webhook Dispatch Payload",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internal_service_token}}",
+                "description": "Internal service bearer token."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/internal/webhooks/jobs/{{job_id}}/dispatch",
+              "host": ["{{base_url}}"],
+              "path": ["internal", "webhooks", "jobs", "{{job_id}}", "dispatch"]
+            },
+            "description": "Retrieve the webhook target URL, signing secret, payload, and current delivery metadata for a job.\n\nUsed by the orchestrator to know where to send the webhook and with what payload. The signing secret should be used to compute an HMAC-SHA256 signature delivered as `X-Signature: sha256=<hex>`.\n\n**Authentication:** Internal service bearer token only — public API keys are rejected."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{internal_service_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/internal/webhooks/jobs/{{job_id}}/dispatch",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "webhooks", "jobs", "{{job_id}}", "dispatch"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"target_url\": \"https://client.example.com/webhooks/doc-platform\",\n  \"signing_secret\": \"whsec_abc123\",\n  \"payload\": {\n    \"event_type\": \"job.completed\",\n    \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n    \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n    \"client_id\": \"demo-client\",\n    \"tenant_id\": \"tenant-001\",\n    \"status\": \"completed\",\n    \"current_stage\": \"classified\",\n    \"results_url\": \"http://localhost:8000/v1/jobs/3fa85f64-5717-4562-b3fc-2c963f66afa6/results\",\n    \"result_summary\": {\n      \"final_label\": \"invoice\",\n      \"confidence\": 0.97,\n      \"low_confidence_policy\": \"threshold_to_unknown_other\",\n      \"model\": \"baseline-keyword\",\n      \"version\": \"0.1.0\",\n      \"artifact_types\": [\"extracted-text\", \"classification-result\"]\n    },\n    \"failure\": null,\n    \"occurred_at\": \"2026-04-22T10:00:30Z\"\n  },\n  \"delivery\": {\n    \"id\": \"d1b2c3d4-0000-0000-0000-000000000001\",\n    \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n    \"delivery_status\": \"pending\",\n    \"attempt_count\": 0,\n    \"last_http_status\": null,\n    \"last_error_message\": null,\n    \"next_retry_at\": null\n  }\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/internal/webhooks/jobs/{{job_id}}/dispatch",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "webhooks", "jobs", "{{job_id}}", "dispatch"]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"unauthorized\",\n  \"message\": \"Invalid or missing bearer token.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response contains dispatch fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('target_url');",
+                  "    pm.expect(json).to.have.property('signing_secret');",
+                  "    pm.expect(json).to.have.property('payload');",
+                  "    pm.expect(json).to.have.property('delivery');",
+                  "    // Persist delivery ID for the record-outcome request",
+                  "    pm.collectionVariables.set('delivery_id', json.delivery.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record Webhook Delivery Outcome",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internal_service_token}}",
+                "description": "Internal service bearer token."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attempt_count\": 1,\n  \"delivery_status\": \"succeeded\",\n  \"last_http_status\": 200,\n  \"last_error_message\": null,\n  \"next_retry_at\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/webhooks/jobs/{{job_id}}/deliveries/{{delivery_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["internal", "webhooks", "jobs", "{{job_id}}", "deliveries", "{{delivery_id}}"]
+            },
+            "description": "Record the outcome of a webhook delivery attempt.\n\n`delivery_status` values:\n- `pending` — Delivery not yet attempted.\n- `retrying` — Attempt failed; will retry. Set `next_retry_at` to schedule next attempt.\n- `succeeded` — Webhook delivered successfully.\n- `failed` — All retry attempts exhausted.\n\nThe job's own `status` is unaffected by webhook delivery failure."
+          },
+          "response": [
+            {
+              "name": "200 OK — Succeeded",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{internal_service_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"attempt_count\": 1,\n  \"delivery_status\": \"succeeded\",\n  \"last_http_status\": 200,\n  \"last_error_message\": null,\n  \"next_retry_at\": null\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/internal/webhooks/jobs/{{job_id}}/deliveries/{{delivery_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "webhooks", "jobs", "{{job_id}}", "deliveries", "{{delivery_id}}"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"id\": \"d1b2c3d4-0000-0000-0000-000000000001\",\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"delivery_status\": \"succeeded\",\n  \"attempt_count\": 1,\n  \"last_http_status\": 200,\n  \"last_error_message\": null,\n  \"next_retry_at\": null\n}"
+            },
+            {
+              "name": "200 OK — Retrying",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{internal_service_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"attempt_count\": 1,\n  \"delivery_status\": \"retrying\",\n  \"last_http_status\": 503,\n  \"last_error_message\": \"Service unavailable\",\n  \"next_retry_at\": \"2026-04-22T10:05:00Z\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/internal/webhooks/jobs/{{job_id}}/deliveries/{{delivery_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "webhooks", "jobs", "{{job_id}}", "deliveries", "{{delivery_id}}"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"id\": \"d1b2c3d4-0000-0000-0000-000000000001\",\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"delivery_status\": \"retrying\",\n  \"attempt_count\": 1,\n  \"last_http_status\": 503,\n  \"last_error_message\": \"Service unavailable\",\n  \"next_retry_at\": \"2026-04-22T10:05:00Z\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response contains delivery fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('id');",
+                  "    pm.expect(json).to.have.property('delivery_status');",
+                  "    pm.expect(json).to.have.property('attempt_count');",
+                  "    pm.expect(['pending','retrying','succeeded','failed']).to.include(json.delivery_status);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Internal — Operator Dashboard",
+      "description": "Operator dashboard endpoints for monitoring and debugging jobs.\n\nAuthentication: `Authorization: Bearer <operator_bearer_token>`\nRequires `OPERATOR_DASHBOARD_ENABLED=true`.",
+      "item": [
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_bearer_token}}",
+                "description": "Operator bearer token."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/internal/operator/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["internal", "operator", "jobs"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "failed",
+                  "description": "Filter by job status: queued, running, completed, failed.",
+                  "disabled": true
+                },
+                {
+                  "key": "client_id",
+                  "value": "demo-client",
+                  "description": "Filter by client ID.",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Free-text search across job IDs, document IDs, etc.",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Maximum number of results to return (default: 50).",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List all jobs with an aggregate status summary. Supports optional filtering by `status`, `client_id`, and free-text `q`. Results capped by `limit`."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{operator_bearer_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/internal/operator/jobs",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "operator", "jobs"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"summary\": {\n    \"queued\": 5,\n    \"running\": 2,\n    \"completed\": 47,\n    \"failed\": 3\n  },\n  \"jobs\": [\n    {\n      \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n      \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n      \"client_id\": \"demo-client\",\n      \"status\": \"completed\",\n      \"current_stage\": \"classified\",\n      \"failure\": null,\n      \"webhook_delivery_status\": \"succeeded\",\n      \"retry_count\": 0,\n      \"max_retry_count\": 3,\n      \"dead_letter_reason\": null,\n      \"terminal_failure_category\": null,\n      \"updated_at\": \"2026-04-22T10:00:30Z\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/internal/operator/jobs",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "operator", "jobs"]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"error_code\": \"unauthorized\",\n  \"message\": \"Invalid or missing bearer token.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response contains summary and jobs list', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('summary');",
+                  "    pm.expect(json).to.have.property('jobs');",
+                  "    pm.expect(json.summary).to.have.all.keys('queued','running','completed','failed');",
+                  "    pm.expect(json.jobs).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Job Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_bearer_token}}",
+                "description": "Operator bearer token."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/internal/operator/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["internal", "operator", "jobs", "{{job_id}}"]
+            },
+            "description": "Get detailed information about a specific job including the full stage event history and all webhook delivery attempts."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{operator_bearer_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/internal/operator/jobs/{{job_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "operator", "jobs", "{{job_id}}"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"job_id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"document_id\": \"7cb45a12-1234-4321-abcd-ef0123456789\",\n  \"client_id\": \"demo-client\",\n  \"tenant_id\": \"tenant-001\",\n  \"status\": \"completed\",\n  \"current_stage\": \"classified\",\n  \"failure\": null,\n  \"retry_count\": 0,\n  \"max_retry_count\": 3,\n  \"dead_lettered_at\": null,\n  \"dead_letter_reason\": null,\n  \"terminal_failure_category\": null,\n  \"extraction_model\": \"pdfplumber\",\n  \"classification_model\": \"baseline-keyword\",\n  \"classification_version\": \"0.1.0\",\n  \"stage_events\": [\n    {\"event_type\": \"stage_started\", \"stage\": \"accepted\", \"created_at\": \"2026-04-22T10:00:00Z\", \"payload\": {}},\n    {\"event_type\": \"stage_completed\", \"stage\": \"accepted\", \"created_at\": \"2026-04-22T10:00:01Z\", \"payload\": {}},\n    {\"event_type\": \"stage_started\", \"stage\": \"extracting\", \"created_at\": \"2026-04-22T10:00:02Z\", \"payload\": {}},\n    {\"event_type\": \"stage_completed\", \"stage\": \"extracting\", \"created_at\": \"2026-04-22T10:00:10Z\", \"payload\": {}},\n    {\"event_type\": \"stage_started\", \"stage\": \"classifying\", \"created_at\": \"2026-04-22T10:00:11Z\", \"payload\": {}},\n    {\"event_type\": \"stage_completed\", \"stage\": \"classified\", \"created_at\": \"2026-04-22T10:00:30Z\", \"payload\": {}}\n  ],\n  \"webhook_deliveries\": [\n    {\n      \"id\": \"d1b2c3d4-0000-0000-0000-000000000001\",\n      \"event_type\": \"job.completed\",\n      \"delivery_status\": \"succeeded\",\n      \"attempt_count\": 1,\n      \"last_http_status\": 200,\n      \"last_error_message\": null,\n      \"next_retry_at\": null,\n      \"updated_at\": \"2026-04-22T10:00:35Z\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{operator_bearer_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/internal/operator/jobs/nonexistent-job-id",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "operator", "jobs", "nonexistent-job-id"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"Job not found.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response contains detail fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('job_id');",
+                  "    pm.expect(json).to.have.property('stage_events');",
+                  "    pm.expect(json).to.have.property('webhook_deliveries');",
+                  "    pm.expect(json.stage_events).to.be.an('array');",
+                  "    pm.expect(json.webhook_deliveries).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Operator Dashboard (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_bearer_token}}",
+                "description": "Operator bearer token."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/internal/operator/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["internal", "operator", "dashboard"]
+            },
+            "description": "Renders the operator dashboard HTML interface. Open in a browser for the full UI experience.\n\nRequires `OPERATOR_DASHBOARD_ENABLED=true`."
+          },
+          "response": [
+            {
+              "name": "200 OK — HTML",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{operator_bearer_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/internal/operator/dashboard",
+                  "host": ["{{base_url}}"],
+                  "path": ["internal", "operator", "dashboard"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "text/html; charset=utf-8"}],
+              "body": "<!-- Operator Dashboard HTML -->"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Content-Type is HTML', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

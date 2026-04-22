@@ -6,9 +6,9 @@ An API-first backend platform for asynchronous document text extraction and docu
 
 ### Prerequisites
 
-- Python 3.12 or newer
+- Python 3.13 or newer
 - `pip`
-- Docker with the `docker compose` plugin
+- Docker with the `docker compose` plugin (Docker Engine 25+)
 
 ### 1. Clone and enter the repo
 
@@ -106,15 +106,21 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/
 docker compose up --build
 ```
 
-This starts:
+This builds and starts:
 
-- Postgres
-- RabbitMQ
-- MinIO
-- API
-- Orchestrator
-- Extractor
-- Classifier
+| Service | Description |
+|---|---|
+| `postgres` | PostgreSQL 17 — primary datastore |
+| `rabbitmq` | RabbitMQ 3.13 — task broker |
+| `minio` | MinIO — local object storage (S3-compatible) |
+| `api` | FastAPI — external-facing HTTP API (port 8000) |
+| `orchestrator` | Celery worker — pipeline control plane |
+| `extractor` | FastAPI — text extraction service (port 8001) |
+| `classifier` | FastAPI — document classification service (port 8002) |
+| `dozzle` | Real-time Docker log viewer — accessible at `/dozzle` via nginx |
+| `nginx` | Reverse proxy — public entry point on port 80 |
+
+On first run the API container automatically runs `alembic upgrade head` before starting uvicorn.
 
 ### 6. Verify the stack
 
@@ -124,21 +130,87 @@ Check container status:
 docker compose ps
 ```
 
-Health endpoints:
+Health endpoints (local):
 
 - API: `http://localhost:8000/healthz`
 - Extractor: `http://localhost:8001/healthz`
 - Classifier: `http://localhost:8002/healthz`
+- nginx (proxies API): `http://localhost/healthz`
 
-Useful infrastructure UIs:
+Admin UIs:
 
-- MinIO console: `http://localhost:9001`
-- RabbitMQ management: `http://localhost:15672`
+| UI | URL | Notes |
+|---|---|---|
+| MinIO console | `http://localhost:9001` | credentials: `minioadmin / minioadmin` |
+| RabbitMQ management | `http://localhost:15672` | default guest login |
+| Dozzle log viewer | `http://localhost/dozzle` | real-time container logs |
 
 Internal operator surface:
 
 - Dashboard HTML: `http://localhost:8000/internal/operator/dashboard`
 - Jobs JSON: `http://localhost:8000/internal/operator/jobs`
+
+---
+
+## EC2 Development Setup
+
+The stack is designed to run on an EC2 instance with nginx as the public entry point on port 80.
+
+### EC2 security group rules (recommended)
+
+| Port | Protocol | Source | Purpose |
+|---|---|---|---|
+| 80 | TCP | 0.0.0.0/0 | nginx → API + Dozzle |
+| 22 | TCP | Your IP | SSH |
+| 15672 | TCP | Your IP | RabbitMQ management UI |
+| 9001 | TCP | Your IP | MinIO console |
+
+Do **not** expose ports 8000, 8001, or 8002 publicly — all external API traffic should go through port 80.
+
+### First-time EC2 setup
+
+```bash
+# Install Docker on Amazon Linux 2023
+sudo dnf install -y docker
+sudo systemctl enable --now docker
+sudo usermod -aG docker ec2-user
+newgrp docker
+
+# Install the Compose plugin
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Clone and start
+git clone <your-repo-url>
+cd doc_ocr_classification
+cp .env.example .env
+docker compose up --build -d
+```
+
+### Accessing services on EC2
+
+Replace `<EC2_PUBLIC_IP>` with your instance public IP or DNS name.
+
+| Surface | URL |
+|---|---|
+| API | `http://<EC2_PUBLIC_IP>/v1/...` |
+| Dozzle | `http://<EC2_PUBLIC_IP>/dozzle` |
+| MinIO console | `http://<EC2_PUBLIC_IP>:9001` |
+| RabbitMQ management | `http://<EC2_PUBLIC_IP>:15672` |
+
+### Rebuilding after code changes
+
+```bash
+docker compose up --build -d
+```
+
+To rebuild only one service:
+
+```bash
+docker compose up --build -d api
+```
 
 ### 7. Try the upload contract
 

@@ -1,0 +1,31 @@
+# Version control
+.git
+.github
+.gitignore
+
+# Planning / docs that don't affect the build
+.planning
+docs
+*.md
+mermaid-diagram.png
+
+# Python artifacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+
+# Local env files (runtime config is injected via docker-compose env_file)
+.env
+.env.*
+!.env.example
+
+# Infra / terraform — not needed inside service images
+infra
+
+# Editor
+.vscode
+.idea
