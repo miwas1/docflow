@@ -1,8 +1,6 @@
 """Shared rendering utilities for dashboard pages."""
 
-from pathlib import Path
-
-_TEMPLATES_PATH = Path(__file__).resolve().parents[1] / "templates"
+from api_service.templates_utils import TEMPLATES_PATH, get_template_text
 
 
 def render_dashboard(
@@ -23,14 +21,12 @@ def render_dashboard(
         **ctx: Additional substitution variables for the content template.
     """
     # Render inner content
-    content_text = (_TEMPLATES_PATH / content_template).read_text(encoding="utf-8")
+    content_text = get_template_text(content_template)
     for key, value in ctx.items():
         content_text = content_text.replace(f"{{{{{key}}}}}", str(value))
 
     # Render base with injected content
-    base_text = (_TEMPLATES_PATH / "dashboard" / "_base.html").read_text(
-        encoding="utf-8"
-    )
+    base_text = get_template_text("dashboard/_base.html")
     nav_keys = {"home", "keys", "webhooks", "jobs"}
     for nav_key in nav_keys:
         placeholder = f"{{{{active_{nav_key}}}}}"

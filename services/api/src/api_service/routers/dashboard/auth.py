@@ -1,7 +1,5 @@
 """Dashboard auth routes: signup, login, logout."""
 
-from pathlib import Path
-
 from api_service.config import APISettings
 from api_service.dependencies import (
     get_db_session,
@@ -9,19 +7,19 @@ from api_service.dependencies import (
     get_settings_dependency,
 )
 from api_service.services.dashboard_auth import login_user, logout_user, signup_user
+from api_service.templates_utils import get_template_text
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/dashboard")
 
-_TEMPLATES_PATH = Path(__file__).resolve().parents[3] / "templates"
 _SESSION_COOKIE = "session_id"
 
 
 def _tmpl(name: str) -> str:
     """Read a template file as raw HTML."""
-    return (_TEMPLATES_PATH / name).read_text(encoding="utf-8")
+    return get_template_text(name)
 
 
 def _flash(

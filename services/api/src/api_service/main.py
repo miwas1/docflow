@@ -176,10 +176,9 @@ def create_app() -> FastAPI:
     def render_operator_dashboard(
         _: str = Depends(get_authenticated_operator),
     ) -> HTMLResponse:
-        template_path = (
-            Path(__file__).resolve().parent / "templates" / "operator_dashboard.html"
-        )
-        return HTMLResponse(template_path.read_text(encoding="utf-8"))
+        from api_service.templates_utils import get_template_text
+
+        return HTMLResponse(get_template_text("operator_dashboard.html"))
 
     # Dashboard routers
     app.include_router(landing_router)
