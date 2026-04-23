@@ -181,7 +181,46 @@ python3 training/text_finetune/scripts/export_model.py \
   --export-dir training/text_finetune/runs/modernbert-text-clf/export
 ```
 
-### Step 6: Upload to Hugging Face Hub
+### Step 6: Test in the Docker classifier service
+
+The main Docker stack now expects the fine-tuned exported model and loads it directly in
+the classifier container.
+
+With the default repo layout, the exported model path:
+
+```bash
+training/text_finetune/runs/modernbert-text-clf/export
+```
+
+is mounted into the classifier container as:
+
+```bash
+/models/finetuned/current
+```
+
+So after export, restart the classifier service:
+
+```bash
+docker compose up --build -d classifier api orchestrator
+```
+
+Then verify the classifier container is healthy:
+
+```bash
+docker compose ps classifier
+curl http://localhost:8002/healthz
+```
+
+If your exported model lives somewhere else on the host, set:
+
+```bash
+CLASSIFIER_FINETUNED_MODEL_HOST_PATH=/absolute/path/to/exported/model
+CLASSIFIER_MODEL_NAME=/models/finetuned/current
+```
+
+in `.env` before restarting Docker.
+
+### Step 7: Upload to Hugging Face Hub
 
 The exported folder is a standard Hugging Face model directory, so you can publish it for
 other people to download and use.

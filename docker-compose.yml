@@ -138,8 +138,8 @@ services:
     environment:
       RABBITMQ_URL: amqp://doc_platform:doc_platform@rabbitmq:5672/doc_platform
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
-      CLASSIFIER_MODEL_NAME: ${CLASSIFIER_MODEL_NAME:-answerdotai/ModernBERT-base}
-      CLASSIFIER_MODEL_VERSION: ${CLASSIFIER_MODEL_VERSION:-dev-modernbert}
+      CLASSIFIER_MODEL_NAME: ${CLASSIFIER_MODEL_NAME:-/models/finetuned/current}
+      CLASSIFIER_MODEL_VERSION: ${CLASSIFIER_MODEL_VERSION:-modernbert-finetuned-local}
       CLASSIFIER_MODEL_PROVIDER: ${CLASSIFIER_MODEL_PROVIDER:-huggingface}
       CLASSIFIER_MODEL_CACHE_DIR: ${CLASSIFIER_MODEL_CACHE_DIR:-/models/huggingface}
       CLASSIFIER_MODEL_LOCAL_FILES_ONLY: ${CLASSIFIER_MODEL_LOCAL_FILES_ONLY:-true}
@@ -152,6 +152,7 @@ services:
       - "8002:8002"
     volumes:
       - ${CLASSIFIER_MODEL_CACHE_HOST_PATH:-/opt/doc-platform/hf-cache}:${CLASSIFIER_MODEL_CACHE_DIR:-/models/huggingface}
+      - ${CLASSIFIER_FINETUNED_MODEL_HOST_PATH:-./training/text_finetune/runs/modernbert-text-clf/export}:/models/finetuned/current:ro
     depends_on:
       rabbitmq:
         condition: service_healthy

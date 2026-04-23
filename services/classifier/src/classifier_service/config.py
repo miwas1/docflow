@@ -9,24 +9,14 @@ from pydantic import field_validator
 from doc_platform_contracts.settings import BasePlatformSettings
 
 
-DEFAULT_LABEL_DESCRIPTIONS: dict[str, str] = {
-    "invoice": "Invoice document with bill to details, line items, balances, or total due amounts.",
-    "receipt": "Receipt document issued by a cashier or merchant after a payment or purchase.",
-    "bank_statement": "Bank statement listing account summaries, balances, statement periods, and transactions.",
-    "id_card": "Identification card or government identity document with card number, date of birth, or identity details.",
-    "utility_bill": "Utility bill for electricity, water, gas, telecom, or related service charges at a service address.",
-    "contract": "Contract or agreement with named parties, obligations, terms, signatures, or conditions.",
-    "medical_record": "Medical record with patient details, diagnosis, treatment, provider notes, or clinical history.",
-    "tax_form": "Tax form with withholding, taxpayer identifiers, social security fields, or filing information.",
-    "unknown_other": "Document that does not confidently match any supported taxonomy label.",
-}
+DEFAULT_LABEL_DESCRIPTIONS: dict[str, str] = {}
 
 
 class ClassifierSettings(BasePlatformSettings):
     host: str = Field(default="0.0.0.0", alias="CLASSIFIER_HOST")
     port: int = Field(default=8002, alias="CLASSIFIER_PORT")
-    classifier_model_name: str = Field(default="answerdotai/ModernBERT-base", alias="CLASSIFIER_MODEL_NAME")
-    classifier_model_version: str = Field(default="dev-modernbert", alias="CLASSIFIER_MODEL_VERSION")
+    classifier_model_name: str = Field(default="/models/finetuned/current", alias="CLASSIFIER_MODEL_NAME")
+    classifier_model_version: str = Field(default="modernbert-finetuned-local", alias="CLASSIFIER_MODEL_VERSION")
     classifier_model_provider: str = Field(default="huggingface", alias="CLASSIFIER_MODEL_PROVIDER")
     classifier_model_cache_dir: str = Field(default="/models/huggingface", alias="CLASSIFIER_MODEL_CACHE_DIR")
     classifier_model_local_files_only: bool = Field(default=True, alias="CLASSIFIER_MODEL_LOCAL_FILES_ONLY")

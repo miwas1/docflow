@@ -5,12 +5,14 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TARGET_USER="${SUDO_USER:-${USER}}"
 SKIP_DOCKER_INSTALL=0
 CACHE_DIR_OVERRIDE=""
+SKIP_MODEL_DOWNLOAD=0
+BASE_MODEL_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
-Usage: scripts/bootstrap_ec2_dev.sh [--user <linux-user>] [--cache-dir <path>] [--skip-docker-install]
+Usage: scripts/bootstrap_ec2_dev.sh [--user <linux-user>] [--cache-dir <path>] [--skip-docker-install] [--skip-model-download] [--base-model <hf-repo-id>]
 
-One-time bootstrap for CPU-based ModernBERT development on EC2 or another Linux Docker host.
+One-time bootstrap for CPU-based fine-tuning + classifier development on EC2 or another Linux Docker host.
 EOF
 }
 
@@ -27,6 +29,14 @@ while [[ $# -gt 0 ]]; do
     --skip-docker-install)
       SKIP_DOCKER_INSTALL=1
       shift
+      ;;
+    --skip-model-download)
+      SKIP_MODEL_DOWNLOAD=1
+      shift
+      ;;
+    --base-model)
+      BASE_MODEL_OVERRIDE="$2"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -128,21 +138,28 @@ download_model_snapshot() {
 ensure_env_file
 
 ENV_FILE="${ROOT_DIR}/.env"
-MODEL_NAME=$(read_env_value "CLASSIFIER_MODEL_NAME" "answerdotai/ModernBERT-base" "$ENV_FILE")
+# The classifier now points CLASSIFIER_MODEL_NAME at a *local fine-tuned model directory* (e.g. /models/finetuned/current).
+# For bootstrap we seed the base model into the HF cache so CPU fine-tuning can run with local_files_only=true.
+BASE_MODEL_NAME=$(read_env_value "TEXT_FINETUNE_BASE_MODEL_NAME" "answerdotai/ModernBERT-base" "$ENV_FILE")
+if [[ -n "$BASE_MODEL_OVERRIDE" ]]; then
+  BASE_MODEL_NAME="$BASE_MODEL_OVERRIDE"
+fi
 DEFAULT_CACHE_DIR=$(read_env_value "CLASSIFIER_MODEL_CACHE_HOST_PATH" "/opt/doc-platform/hf-cache" "$ENV_FILE")
 CACHE_DIR="${CACHE_DIR_OVERRIDE:-$DEFAULT_CACHE_DIR}"
 
 install_docker
 ensure_docker_running
 ensure_cache_dir "$CACHE_DIR"
-download_model_snapshot "$MODEL_NAME" "$CACHE_DIR"
+if [[ "$SKIP_MODEL_DOWNLOAD" -eq 0 ]]; then
+  download_model_snapshot "$BASE_MODEL_NAME" "$CACHE_DIR"
+fi
 
 cat <<EOF
 
 Bootstrap complete.
 
 Model cache: ${CACHE_DIR}
-Model name:  ${MODEL_NAME}
+Base model:  ${BASE_MODEL_NAME}
 
 Next steps:
   cd ${ROOT_DIR}

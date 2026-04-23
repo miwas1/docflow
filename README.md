@@ -42,21 +42,32 @@ The default local values are already set up for:
 
 You can keep `.env.example` as-is for the default local stack, or override values in `.env`.
 
-### 3. Pre-download the classifier model cache
+### 3. Prepare the fine-tuned classifier model for Docker
 
-The classifier now expects a local Hugging Face cache with the configured ModernBERT model before the container starts. On Linux or EC2, run the one-time bootstrap script:
+The classifier service now expects a fine-tuned sequence-classification model directory,
+not the base `answerdotai/ModernBERT-base` checkpoint.
+
+By default, `.env.example` points Docker at:
 
 ```bash
-./scripts/bootstrap_ec2_dev.sh --skip-docker-install
+./training/text_finetune/runs/modernbert-text-clf/export
 ```
 
-The script:
+If you have not trained and exported the model yet, run the fine-tuning flow in
+`training/text_finetune/README.md` first, including:
 
-- keeps your existing `.env` if present, or creates one from `.env.example`
-- creates the host cache directory from `CLASSIFIER_MODEL_CACHE_HOST_PATH`
-- downloads `CLASSIFIER_MODEL_NAME` into that cache
+```bash
+python3 training/text_finetune/scripts/export_model.py \
+  --model-dir training/text_finetune/runs/modernbert-text-clf/model \
+  --export-dir training/text_finetune/runs/modernbert-text-clf/export
+```
 
-On EC2 you can omit `--skip-docker-install` and let the script install Docker too.
+If your exported model lives somewhere else, update `.env`:
+
+```bash
+CLASSIFIER_FINETUNED_MODEL_HOST_PATH=/absolute/path/to/exported/model
+CLASSIFIER_MODEL_NAME=/models/finetuned/current
+```
 
 ### 4. Install Python dependencies
 
@@ -188,7 +199,8 @@ This builds and starts:
 
 On first run the API container automatically runs `alembic upgrade head` before starting uvicorn.
 
-The classifier container mounts `${CLASSIFIER_MODEL_CACHE_HOST_PATH}` into `${CLASSIFIER_MODEL_CACHE_DIR}` and reads ModernBERT from the local cache instead of downloading it on startup.
+The classifier container mounts `${CLASSIFIER_FINETUNED_MODEL_HOST_PATH}` into `/models/finetuned/current`
+and loads the fine-tuned sequence-classification model from `${CLASSIFIER_MODEL_NAME}`.
 
 ### 7. Verify the stack
 
@@ -290,7 +302,7 @@ Do **not** expose ports 8000, 8001, or 8002 publicly — all external API traffi
 git clone <your-repo-url>
 cd doc_ocr_classification
 
-# One-time bootstrap: installs Docker if needed, creates .env, and pre-downloads ModernBERT
+# One-time bootstrap: installs Docker if needed and creates .env
 ./scripts/bootstrap_ec2_dev.sh --user ec2-user
 
 # If this is the first time your user was added to the docker group:
@@ -300,7 +312,8 @@ newgrp docker
 docker compose up --build -d
 ```
 
-The bootstrap script seeds the model cache into `CLASSIFIER_MODEL_CACHE_HOST_PATH` so later `docker compose up --build` runs reuse the downloaded weights while still rebuilding your latest code.
+After fine-tuning and export, set `CLASSIFIER_FINETUNED_MODEL_HOST_PATH` in `.env` if you want Docker
+to load a model directory outside the repo default location.
 
 ### Accessing services on EC2
 

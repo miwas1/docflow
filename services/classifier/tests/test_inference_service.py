@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from classifier_service.config import ClassifierSettings
 from classifier_service.inference import (
     ClassificationRequest,
-    SimilarityClassifierRuntime,
+    SequenceClassifierRuntime,
     run_classification,
 )
 from classifier_service.main import app
@@ -18,32 +20,6 @@ def build_request(text: str) -> ClassificationRequest:
     )
 
 
-class FakeEmbedder:
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        embeddings: list[list[float]] = []
-        for text in texts:
-            normalized = text.lower()
-            if "invoice" in normalized or "bill to" in normalized or "total due" in normalized:
-                embeddings.append([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-            elif "receipt" in normalized or "cashier" in normalized:
-                embeddings.append([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-            elif "bank statement" in normalized or "account summaries" in normalized:
-                embeddings.append([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-            elif "identification card" in normalized or "date of birth" in normalized:
-                embeddings.append([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0])
-            elif "utility bill" in normalized or "service charges" in normalized:
-                embeddings.append([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
-            elif "contract" in normalized or "agreement" in normalized:
-                embeddings.append([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
-            elif "medical record" in normalized or "patient" in normalized:
-                embeddings.append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-            elif "tax form" in normalized or "withholding" in normalized:
-                embeddings.append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
-            else:
-                embeddings.append([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
-        return embeddings
-
-
 def build_settings() -> ClassifierSettings:
     return ClassifierSettings(
         POSTGRES_DSN="postgresql+psycopg://doc_platform:doc_platform@localhost:5432/doc_platform",
@@ -52,23 +28,98 @@ def build_settings() -> ClassifierSettings:
         OBJECT_STORAGE_BUCKET="doc-platform-artifacts",
         OBJECT_STORAGE_ACCESS_KEY="minioadmin",
         OBJECT_STORAGE_SECRET_KEY="minioadmin",
-        CLASSIFIER_MODEL_NAME="answerdotai/ModernBERT-base",
-        CLASSIFIER_MODEL_VERSION="dev-modernbert",
+        CLASSIFIER_MODEL_NAME="/models/huggingface/finetuned/doc-ocr-modernbert/model",
+        CLASSIFIER_MODEL_VERSION="modernbert-finetuned-v1",
         CLASSIFIER_CONFIDENCE_THRESHOLD=0.6,
-        CLASSIFIER_LABEL_DESCRIPTIONS_JSON={
-            "invoice": "Invoice document with bill to and total due amounts.",
-            "receipt": "Receipt document from a cashier after payment.",
-            "unknown_other": "Unknown or other document type.",
-        },
+    )
+
+
+class FakeTensor:
+    def __init__(self, data):
+        self._data = data
+
+    def to(self, _device: str) -> "FakeTensor":
+        return self
+
+    def cpu(self) -> "FakeTensor":
+        return self
+
+    def __getitem__(self, index):
+        return FakeTensor(self._data[index])
+
+    def tolist(self):
+        return self._data
+
+
+class FakeTokenizer:
+    def __call__(self, texts, **_kwargs):
+        return {"input_texts": FakeTensor(list(texts))}
+
+
+class FakeModelOutput:
+    def __init__(self, logits):
+        self.logits = FakeTensor(logits)
+
+
+class FakeModel:
+    class Config:
+        id2label = {0: "invoice", 1: "receipt", 2: "unknown_other"}
+
+    def __init__(self) -> None:
+        self.config = self.Config()
+
+    def eval(self) -> None:
+        return None
+
+    def to(self, _device: str) -> "FakeModel":
+        return self
+
+    def __call__(self, **encoded):
+        logits = []
+        for text in encoded["input_texts"].tolist():
+            normalized = text.lower()
+            if "invoice" in normalized or "bill to" in normalized or "total due" in normalized:
+                logits.append([8.0, 1.0, -1.0])
+            elif "receipt" in normalized or "cashier" in normalized:
+                logits.append([0.5, 7.5, -2.0])
+            else:
+                logits.append([0.2, 0.3, 0.4])
+        return FakeModelOutput(logits)
+
+
+class FakeTorchModule:
+    class no_grad:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class nn:
+        class functional:
+            @staticmethod
+            def softmax(fake_tensor: FakeTensor, dim: int):
+                rows = fake_tensor.tolist()
+                probabilities = []
+                for row in rows:
+                    total = sum(pow(2.718281828459045, value) for value in row)
+                    probabilities.append([pow(2.718281828459045, value) / total for value in row])
+                return FakeTensor(probabilities)
+
+
+def build_runtime() -> SequenceClassifierRuntime:
+    return SequenceClassifierRuntime(
+        settings=build_settings(),
+        torch_module=FakeTorchModule(),
+        tokenizer=FakeTokenizer(),
+        model=FakeModel(),
     )
 
 
 def test_run_classification_returns_supported_taxonomy_label_for_invoice_like_text() -> None:
-    runtime = SimilarityClassifierRuntime(settings=build_settings(), embedder=FakeEmbedder())
+    runtime = build_runtime()
     result = run_classification(
-        build_request(
-            "Invoice Number INV-42\nTotal Due: $120.00\nBill To: Acme Corp",
-        ),
+        build_request("Invoice Number INV-42\nTotal Due: $120.00\nBill To: Acme Corp"),
         settings=build_settings(),
         runtime=runtime,
     )
@@ -79,11 +130,9 @@ def test_run_classification_returns_supported_taxonomy_label_for_invoice_like_te
 
 
 def test_run_classification_maps_low_confidence_documents_to_unknown_other() -> None:
-    runtime = SimilarityClassifierRuntime(settings=build_settings(), embedder=FakeEmbedder())
+    runtime = build_runtime()
     result = run_classification(
-        build_request(
-            "This memo contains general discussion notes with no stable document-type keywords.",
-        ),
+        build_request("This memo contains general discussion notes with no stable document-type keywords."),
         settings=build_settings(),
         runtime=runtime,
     )
@@ -93,9 +142,9 @@ def test_run_classification_maps_low_confidence_documents_to_unknown_other() -> 
     assert result.threshold_applied > 0
 
 
-def test_run_classification_uses_settings_trace_metadata_for_modernbert_runtime() -> None:
+def test_run_classification_uses_settings_trace_metadata_for_finetuned_runtime() -> None:
     settings = build_settings()
-    runtime = SimilarityClassifierRuntime(settings=settings, embedder=FakeEmbedder())
+    runtime = build_runtime()
 
     result = run_classification(
         build_request("Receipt for purchase\nCashier: Jane Doe"),
@@ -103,8 +152,8 @@ def test_run_classification_uses_settings_trace_metadata_for_modernbert_runtime(
         runtime=runtime,
     )
 
-    assert result.produced_by.model == "answerdotai/ModernBERT-base"
-    assert result.produced_by.version == "dev-modernbert"
+    assert result.produced_by.model == "/models/huggingface/finetuned/doc-ocr-modernbert/model"
+    assert result.produced_by.version == "modernbert-finetuned-v1"
 
 
 def test_classification_route_is_registered() -> None:

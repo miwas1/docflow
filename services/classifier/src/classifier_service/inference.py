@@ -1,11 +1,9 @@
-"""Baseline document classification helpers."""
+"""Fine-tuned document classification helpers."""
 
 from __future__ import annotations
 
-import math
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -35,57 +33,73 @@ class ClassificationError(Exception):
         self.status_code = status_code
 
 
-class TextEmbedder(Protocol):
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Return one vector per input text."""
+def _softmax(scores: list[float]) -> list[float]:
+    # Lightweight fallback for tests; production uses torch.softmax.
+    import math
+
+    if not scores:
+        return []
+    max_score = max(scores)
+    exps = [math.exp(score - max_score) for score in scores]
+    total = sum(exps) or 1.0
+    return [value / total for value in exps]
 
 
-def _normalize_embedding(vector: list[float]) -> list[float]:
-    magnitude = math.sqrt(sum(value * value for value in vector))
-    if magnitude == 0:
-        return [0.0 for _ in vector]
-    return [value / magnitude for value in vector]
+class SequenceClassifierRuntime:
+    def __init__(
+        self,
+        settings: ClassifierSettings,
+        *,
+        torch_module=None,
+        tokenizer=None,
+        model=None,
+    ) -> None:
+        self.settings = settings
 
+        if torch_module is None or tokenizer is None or model is None:
+            try:
+                import torch
+                from transformers import AutoModelForSequenceClassification
+                from transformers import AutoTokenizer
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Fine-tuned classifier runtime dependencies are not installed. "
+                    "Install classifier extras before starting the service."
+                ) from exc
 
-def _cosine_similarity(left: list[float], right: list[float]) -> float:
-    if len(left) != len(right):
-        raise ValueError("Embedding vectors must have equal dimensions.")
-    normalized_left = _normalize_embedding(left)
-    normalized_right = _normalize_embedding(right)
-    return max(0.0, sum(a * b for a, b in zip(normalized_left, normalized_right, strict=True)))
+            torch_module = torch
+            tokenizer = AutoTokenizer.from_pretrained(
+                settings.classifier_model_name,
+                cache_dir=settings.classifier_model_cache_dir,
+                local_files_only=settings.classifier_model_local_files_only,
+            )
+            model = AutoModelForSequenceClassification.from_pretrained(
+                settings.classifier_model_name,
+                cache_dir=settings.classifier_model_cache_dir,
+                local_files_only=settings.classifier_model_local_files_only,
+            )
 
-
-class ModernBertTextEmbedder:
-    def __init__(self, settings: ClassifierSettings) -> None:
-        try:
-            import torch
-            from transformers import AutoModel
-            from transformers import AutoTokenizer
-        except ImportError as exc:
-            raise RuntimeError(
-                "ModernBERT runtime dependencies are not installed. "
-                "Install classifier extras before starting the service."
-            ) from exc
-
-        self._torch = torch
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            settings.classifier_model_name,
-            cache_dir=settings.classifier_model_cache_dir,
-            local_files_only=settings.classifier_model_local_files_only,
-        )
-        self._model = AutoModel.from_pretrained(
-            settings.classifier_model_name,
-            cache_dir=settings.classifier_model_cache_dir,
-            local_files_only=settings.classifier_model_local_files_only,
-        )
+        self._torch = torch_module
+        self._tokenizer = tokenizer
+        self._model = model
         self._model.eval()
         self._device = settings.classifier_device
         self._model.to(self._device)
         self._max_length = settings.classifier_max_length
+        self._id2label = self._load_id2label()
 
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+    def _load_id2label(self) -> dict[int, str]:
+        mapping = getattr(self._model.config, "id2label", None)
+        if isinstance(mapping, dict) and mapping:
+            return {int(key): value for key, value in mapping.items()}
+        raise ValueError(
+            "The configured classifier model does not expose id2label metadata. "
+            "Point CLASSIFIER_MODEL_NAME at a fine-tuned sequence-classification model directory."
+        )
+
+    def classify(self, text: str) -> list[ClassificationCandidate]:
         encoded = self._tokenizer(
-            texts,
+            [text],
             padding=True,
             truncation=True,
             max_length=self._max_length,
@@ -96,61 +110,38 @@ class ModernBertTextEmbedder:
         with self._torch.no_grad():
             outputs = self._model(**encoded)
 
-        attention_mask = encoded["attention_mask"].unsqueeze(-1)
-        masked_hidden_state = outputs.last_hidden_state * attention_mask
-        pooled = masked_hidden_state.sum(dim=1) / attention_mask.sum(dim=1).clamp(min=1)
-        normalized = self._torch.nn.functional.normalize(pooled, p=2, dim=1)
-        return normalized.cpu().tolist()
-
-
-class SimilarityClassifierRuntime:
-    def __init__(self, settings: ClassifierSettings, embedder: TextEmbedder | None = None) -> None:
-        self.settings = settings
-        self.embedder = embedder or ModernBertTextEmbedder(settings)
-        self._labels = [
-            (label, description)
-            for label, description in settings.classifier_label_descriptions.items()
-            if label != "unknown_other"
-        ]
-        if not self._labels:
-            raise ValueError("At least one supported taxonomy label must be configured.")
-        label_descriptions = [description for _, description in self._labels]
-        self._prototype_embeddings = self.embedder.embed_texts(label_descriptions)
-
-    def classify(self, text: str) -> list[ClassificationCandidate]:
-        query_embedding = self.embedder.embed_texts([text])[0]
+        probabilities = self._probabilities_from_logits(outputs.logits)
         candidates = [
-            ClassificationCandidate(
-                label=label,
-                score=_cosine_similarity(query_embedding, prototype_embedding),
-            )
-            for (label, _), prototype_embedding in zip(
-                self._labels,
-                self._prototype_embeddings,
-                strict=True,
-            )
+            ClassificationCandidate(label=self._id2label[index], score=score)
+            for index, score in enumerate(probabilities)
         ]
         candidates.sort(key=lambda candidate: candidate.score, reverse=True)
         return candidates
 
+    def _probabilities_from_logits(self, logits) -> list[float]:
+        if hasattr(self._torch, "nn") and hasattr(self._torch.nn, "functional"):
+            probs = self._torch.nn.functional.softmax(logits, dim=-1)
+            return probs[0].cpu().tolist()
+        return _softmax(logits[0])
+
 
 @lru_cache(maxsize=1)
-def get_runtime() -> SimilarityClassifierRuntime:
-    return SimilarityClassifierRuntime(get_settings())
+def get_runtime() -> SequenceClassifierRuntime:
+    return SequenceClassifierRuntime(get_settings())
 
 
-def warm_runtime() -> SimilarityClassifierRuntime:
+def warm_runtime() -> SequenceClassifierRuntime:
     return get_runtime()
 
 
 def run_classification(
     request: ClassificationRequest | dict,
     settings: ClassifierSettings | None = None,
-    runtime: SimilarityClassifierRuntime | None = None,
+    runtime: SequenceClassifierRuntime | None = None,
 ) -> DocumentClassificationResult:
     parsed_request = request if isinstance(request, ClassificationRequest) else ClassificationRequest.model_validate(request)
     settings = settings or get_settings()
-    runtime = runtime or (get_runtime() if settings is get_settings() else SimilarityClassifierRuntime(settings))
+    runtime = runtime or (get_runtime() if settings is get_settings() else SequenceClassifierRuntime(settings))
 
     matched_candidates = runtime.classify(parsed_request.text)
     if not matched_candidates:
