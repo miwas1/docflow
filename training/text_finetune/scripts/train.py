@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,42 @@ def _tokenize_dataset(dataset, tokenizer, *, max_length: int, stride: int) -> ob
 
     remove_cols = [c for c in dataset.column_names if c not in ("text", "label_id")]
     return dataset.map(tokenize_batch, batched=True, remove_columns=remove_cols)
+
+
+def _build_training_arguments(
+    training_arguments_cls,
+    *,
+    output_dir: str,
+    num_train_epochs: int,
+    learning_rate: float,
+    per_device_train_batch_size: int,
+    per_device_eval_batch_size: int,
+    seed: int,
+):
+    kwargs = {
+        "output_dir": output_dir,
+        "num_train_epochs": num_train_epochs,
+        "learning_rate": learning_rate,
+        "per_device_train_batch_size": per_device_train_batch_size,
+        "per_device_eval_batch_size": per_device_eval_batch_size,
+        "save_strategy": "epoch",
+        "logging_strategy": "steps",
+        "logging_steps": 25,
+        "save_total_limit": 2,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "eval_loss",
+        "greater_is_better": False,
+        "seed": seed,
+        "report_to": [],
+    }
+
+    params = inspect.signature(training_arguments_cls.__init__).parameters
+    if "eval_strategy" in params:
+        kwargs["eval_strategy"] = "epoch"
+    else:
+        kwargs["evaluation_strategy"] = "epoch"
+
+    return training_arguments_cls(**kwargs)
 
 
 def main() -> None:
@@ -105,22 +142,14 @@ def main() -> None:
 
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-    training_args = TrainingArguments(
+    training_args = _build_training_arguments(
+        TrainingArguments,
         output_dir=str(out_dir / "hf_trainer"),
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        logging_strategy="steps",
-        logging_steps=25,
-        save_total_limit=2,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
         seed=args.seed,
-        report_to=[],
     )
 
     trainer = Trainer(
@@ -157,4 +186,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
