@@ -69,6 +69,14 @@ CLASSIFIER_FINETUNED_MODEL_HOST_PATH=/absolute/path/to/exported/model
 CLASSIFIER_MODEL_NAME=/models/finetuned/current
 ```
 
+Troubleshooting when labels look wrong:
+
+- If the `classification.model` in API responses is still `answerdotai/ModernBERT-base`, the classifier container is not loading your exported model.
+  Confirm `CLASSIFIER_FINETUNED_MODEL_HOST_PATH` points at the exported model directory on your host and that it is mounted read-only into `/models/finetuned/current`.
+- If you intentionally run a smaller label set while developing, set `CLASSIFIER_STRICT_TAXONOMY_VALIDATION=false` to bypass taxonomy checks.
+- If you see near-tied predictions on keyword-heavy docs (like invoices), the classifier applies a conservative keyword hint tie-breaker by default.
+  Disable it with `CLASSIFIER_KEYWORD_HINTS_ENABLED=false`.
+
 ### 4. Install Python dependencies
 
 ```bash
@@ -127,10 +135,9 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/orch
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/src pytest services/api/tests/test_operator_dashboard.py services/api/tests/test_webhook_dispatch_api.py -q
 ```
 
-## Optional: Fine-Tuning (Text-Only)
+## Fine-Tuning (Text-Only)
 
-If you want the classifier to output **probabilities** over your taxonomy (instead of cosine-similarity scores),
-you can fine-tune a text classifier on top of ModernBERT using extracted text as training data.
+Fine-tune a text classifier on top of ModernBERT using extracted text as training data.
 
 Scaffold and scripts live in: `training/text_finetune/`
 

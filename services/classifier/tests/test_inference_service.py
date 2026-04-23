@@ -31,6 +31,7 @@ def build_settings() -> ClassifierSettings:
         CLASSIFIER_MODEL_NAME="/models/huggingface/finetuned/doc-ocr-modernbert/model",
         CLASSIFIER_MODEL_VERSION="modernbert-finetuned-v1",
         CLASSIFIER_CONFIDENCE_THRESHOLD=0.6,
+        CLASSIFIER_STRICT_TAXONOMY_VALIDATION=False,
     )
 
 
@@ -87,6 +88,28 @@ class FakeModel:
         return FakeModelOutput(logits)
 
 
+class FakeModelCloseScores:
+    """Produces near-tied logits so keyword hints can break ties for invoice-like text."""
+
+    class Config:
+        id2label = {0: "invoice", 1: "receipt", 2: "unknown_other"}
+
+    def __init__(self) -> None:
+        self.config = self.Config()
+
+    def eval(self) -> None:
+        return None
+
+    def to(self, _device: str) -> "FakeModelCloseScores":
+        return self
+
+    def __call__(self, **encoded):
+        logits = []
+        for _text in encoded["input_texts"].tolist():
+            logits.append([1.0, 1.0, 1.0])
+        return FakeModelOutput(logits)
+
+
 class FakeTorchModule:
     class no_grad:
         def __enter__(self):
@@ -127,6 +150,23 @@ def test_run_classification_returns_supported_taxonomy_label_for_invoice_like_te
     assert result.final_label == "invoice"
     assert result.confidence > 0.6
     assert result.candidate_labels[0].label == "invoice"
+
+
+def test_run_classification_keyword_hints_break_ties_for_invoice_like_text() -> None:
+    runtime = SequenceClassifierRuntime(
+        settings=build_settings(),
+        torch_module=FakeTorchModule(),
+        tokenizer=FakeTokenizer(),
+        model=FakeModelCloseScores(),
+    )
+    result = run_classification(
+        build_request("INVOICE #123\nBill To: Acme Corp\nTotal Amount Due: $120.00"),
+        settings=build_settings(),
+        runtime=runtime,
+    )
+
+    assert result.final_label == "invoice"
+    assert result.confidence > 0.6
 
 
 def test_run_classification_maps_low_confidence_documents_to_unknown_other() -> None:
