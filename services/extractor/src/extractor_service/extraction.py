@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import string
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
@@ -18,11 +19,9 @@ from doc_platform_contracts.extraction import (
     ExtractionTrace,
 )
 from extractor_service.config import ExtractorSettings, get_settings
-from pdf2image import convert_from_bytes
 from PIL import Image
 from pydantic import BaseModel
 
-PDF_TEXT_PATTERN = re.compile(rb"\(([^()]*)\)")
 WORD_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 SUPPORTED_MEDIA_TYPES = {
     "application/pdf",
@@ -37,6 +36,44 @@ JPEG_SIGNATURE = b"\xff\xd8"
 PDF_SIGNATURE = b"%PDF-"
 
 _ocr_engine = None
+_PUNCT_CHARS = set(string.punctuation)
+
+
+def _convert_pdf_to_images(content: bytes) -> list[Image.Image]:
+    # Import lazily so the service can still boot and run non-OCR paths even if
+    # OCR/PDF conversion dependencies are missing in a minimal dev environment.
+    from pdf2image import convert_from_bytes
+
+    return convert_from_bytes(content)
+
+
+def _normalize_pdf_text(text: str) -> str:
+    # Defensive cleanup: some PDF extractors may emit NULs or excessive whitespace.
+    cleaned = text.replace("\x00", "")
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _is_extracted_text_usable(text: str, *, min_chars: int) -> bool:
+    normalized = _normalize_pdf_text(text)
+    if len(normalized) < min_chars:
+        return False
+
+    non_ws = [c for c in normalized if not c.isspace()]
+    if not non_ws:
+        return False
+
+    # Heuristic: reject outputs that look like decoded PDF stream noise (lots of punctuation)
+    # or contain too many non-printable/control characters.
+    punct_ratio = sum(c in _PUNCT_CHARS for c in non_ws) / len(non_ws)
+    non_printable_ratio = sum((not c.isprintable()) for c in non_ws) / len(non_ws)
+    if non_printable_ratio > 0.02:
+        return False
+    if punct_ratio > 0.35:
+        return False
+
+    return True
 
 
 def _get_ocr_engine():
@@ -137,24 +174,48 @@ def run_extraction(
 def extract_pdf(
     content: bytes, source_artifact_id: str, settings: ExtractorSettings
 ) -> ExtractionResult:
-    matches = PDF_TEXT_PATTERN.findall(content)
-    extracted = " ".join(
-        match.decode("utf-8", errors="ignore").strip()
-        for match in matches
-        if match.decode("utf-8", errors="ignore").strip()
-    ).strip()
-    if len(extracted) >= settings.pdf_text_min_chars:
+    # IMPORTANT: Do not attempt to "parse" PDFs via regex over raw bytes.
+    # Many PDFs include compressed streams; scanning raw bytes can accidentally
+    # return stream junk/metadata as "text" (the gibberish issue).
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        # If the dependency isn't available for some reason, fall back to OCR.
+        return run_ocr_on_pdf(content, source_artifact_id)
+
+    try:
+        reader = PdfReader(BytesIO(content))
+    except Exception:
+        # Best-effort: if we can't parse for embedded text, try OCR instead.
+        return run_ocr_on_pdf(content, source_artifact_id)
+
+    pages: list[ExtractionPage] = []
+    extracted_parts: list[str] = []
+    for i, page in enumerate(reader.pages):
+        page_text = page.extract_text() or ""
+        page_text = _normalize_pdf_text(page_text)
+        pages.append(
+            ExtractionPage(
+                page_number=i + 1, text=page_text, source_artifact_id=source_artifact_id
+            )
+        )
+        if page_text:
+            extracted_parts.append(page_text)
+
+    extracted = "\n\n".join(extracted_parts).strip()
+    if _is_extracted_text_usable(extracted, min_chars=settings.pdf_text_min_chars):
         return ExtractionResult(
             text=extracted,
             extraction_path="direct",
             fallback_used=False,
             fallback_reason=None,
-            pages=[
+            pages=pages or [
                 ExtractionPage(
-                    page_number=1, text=extracted, source_artifact_id=source_artifact_id
+                    page_number=1, text="", source_artifact_id=source_artifact_id
                 )
             ],
         )
+
     return run_ocr_on_pdf(content, source_artifact_id)
 
 
@@ -279,7 +340,14 @@ def run_ocr_on_image(content: bytes, source_artifact_id: str) -> ExtractionResul
 def run_ocr_on_pdf(content: bytes, source_artifact_id: str) -> ExtractionResult:
     """Convert a scanned/image PDF to page images via pdf2image and run PaddleOCR on each page."""
     ocr_engine = _get_ocr_engine()
-    pil_images = convert_from_bytes(content)
+    try:
+        pil_images = _convert_pdf_to_images(content)
+    except Exception as exc:
+        raise ExtractionError(
+            error_code="corrupt_pdf",
+            message="PDF content is corrupt or unreadable.",
+            status_code=422,
+        ) from exc
     pages = []
     all_text_parts = []
     for i, pil_image in enumerate(pil_images):

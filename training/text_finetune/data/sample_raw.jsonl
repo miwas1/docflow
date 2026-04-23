@@ -1,0 +1,4 @@
+{"id":"sample-1","label":"invoice","text":"Invoice Number INV-42\nBill To: Acme Corp\nTotal Due: $120.00"}
+{"id":"sample-2","label":"receipt","text":"Receipt\nCashier: Jane Doe\nTotal: $18.50"}
+{"id":"sample-3","label":"unknown_other","text":"General meeting notes.\nAgenda items and action points."}
+

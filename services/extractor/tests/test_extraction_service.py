@@ -16,7 +16,50 @@ from PIL import Image as PILImage
 
 
 def build_pdf_bytes(text: str) -> bytes:
-    return f"%PDF-1.4\n1 0 obj\n<<>>\nstream\nBT ({text}) Tj ET\nendstream\nendobj\n%%EOF".encode()
+    # Minimal, valid one-page PDF with a single Helvetica text draw.
+    # We generate a real xref/trailer so PDF parsers (pypdf) can read it.
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+    )
+    stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
+
+    objs: list[bytes] = []
+    objs.append(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+    objs.append(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+    objs.append(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n"
+        b"/Resources << /Font << /F1 4 0 R >> >>\n"
+        b"/Contents 5 0 R >>\nendobj\n"
+    )
+    objs.append(b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+    objs.append(
+        b"5 0 obj\n"
+        + f"<< /Length {len(stream)} >>\n".encode("ascii")
+        + b"stream\n"
+        + stream
+        + b"\nendstream\nendobj\n"
+    )
+
+    parts: list[bytes] = [b"%PDF-1.4\n"]
+    offsets: list[int] = [0]
+    for obj in objs:
+        offsets.append(sum(len(p) for p in parts))
+        parts.append(obj)
+
+    body = b"".join(parts)
+    xref_offset = len(body)
+    xref = [b"xref\n0 6\n", b"0000000000 65535 f \n"]
+    for off in offsets[1:]:
+        xref.append(f"{off:010d} 00000 n \n".encode("ascii"))
+
+    trailer = (
+        b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n"
+        + str(xref_offset).encode("ascii")
+        + b"\n%%EOF"
+    )
+    return body + b"".join(xref) + trailer
 
 
 def build_docx_bytes(text: str) -> bytes:
@@ -80,7 +123,7 @@ def test_run_extraction_falls_back_to_ocr_for_pdf_without_usable_text() -> None:
 
     with (
         patch(
-            "extractor_service.extraction.convert_from_bytes", return_value=[mock_pil]
+            "extractor_service.extraction._convert_pdf_to_images", return_value=[mock_pil]
         ),
         patch("extractor_service.extraction._get_ocr_engine", return_value=mock_ocr),
     ):

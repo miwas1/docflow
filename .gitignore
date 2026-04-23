@@ -13,6 +13,12 @@ venv/
 # Local environment
 .env
 
+# Training outputs
+training/**/runs/
+training/**/data/processed/
+training/text_finetune/data/raw.jsonl
+training/text_finetune/data/files/
+
 # Terraform
 .terraform/
 *.tfstate

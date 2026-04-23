@@ -6,7 +6,7 @@ An API-first backend platform for asynchronous document text extraction and docu
 
 ### Prerequisites
 
-- Python 3.13 or newer
+- Python 3.12 (project packages currently target `>=3.12,<3.13`)
 - `pip`
 - Docker with the `docker compose` plugin (Docker Engine 25+)
 
@@ -115,6 +115,56 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/extr
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/orchestrator/src pytest services/orchestrator/tests/test_extraction_tasks.py services/orchestrator/tests/test_classification_tasks.py services/orchestrator/tests/test_webhook_tasks.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=packages/contracts/src:services/api/src pytest services/api/tests/test_operator_dashboard.py services/api/tests/test_webhook_dispatch_api.py -q
 ```
+
+## Optional: Fine-Tuning (Text-Only)
+
+If you want the classifier to output **probabilities** over your taxonomy (instead of cosine-similarity scores),
+you can fine-tune a text classifier on top of ModernBERT using extracted text as training data.
+
+Scaffold and scripts live in: `training/text_finetune/`
+
+### Fine-tuning quickstart when you have no training data yet
+
+Use the single documented path in `training/text_finetune/README.md`.
+
+Quick version:
+
+```bash
+python3 -m pip install -r training/text_finetune/requirements.txt
+
+python3 training/text_finetune/scripts/generate_synthetic_jsonl.py \
+  --out training/text_finetune/data/raw.synthetic.jsonl \
+  --examples-per-label 250 \
+  --seed 42
+
+python3 training/text_finetune/scripts/prepare_dataset.py \
+  --input training/text_finetune/data/raw.synthetic.jsonl \
+  --out-dir training/text_finetune/data/processed
+
+python3 training/text_finetune/scripts/train.py \
+  --data-dir training/text_finetune/data/processed \
+  --output-dir training/text_finetune/runs/modernbert-text-clf \
+  --base-model answerdotai/ModernBERT-base \
+  --max-length 512
+
+python3 training/text_finetune/scripts/evaluate.py \
+  --data-dir training/text_finetune/data/processed \
+  --model-dir training/text_finetune/runs/modernbert-text-clf/model
+
+python3 training/text_finetune/scripts/export_model.py \
+  --model-dir training/text_finetune/runs/modernbert-text-clf/model \
+  --export-dir training/text_finetune/runs/modernbert-text-clf/export
+
+python3 training/text_finetune/scripts/push_to_hub.py \
+  --folder training/text_finetune/runs/modernbert-text-clf/export \
+  --repo-id your-username/doc-ocr-modernbert
+```
+
+This path bootstraps the pipeline with synthetic post-extraction text. For production use,
+replace or supplement it with real extracted text and verified labels.
+
+If you are training over SSH, use `tmux` or `nohup`. The detailed commands are documented in
+`training/text_finetune/README.md`.
 
 ### 6. Start the local infrastructure and services
 

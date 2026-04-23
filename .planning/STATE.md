@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Executing Phase 04
-last_updated: "2026-04-22T20:22:50.350Z"
+last_updated: "2026-04-22T22:29:30.753Z"
 progress:
   total_phases: 7
   completed_phases: 3
@@ -40,6 +40,10 @@ See: `.planning/PROJECT.md` (updated 2026-04-21)
 - 2026-04-22: Captured Phase 5 context in `.planning/phases/05-client-delivery-and-operator-visibility/05-CONTEXT.md`
 - 2026-04-22: Added a quick-task design spec for CPU-only EC2 ModernBERT bootstrap setup and recorded it under `.planning/quick/260422-olg-design-ec2-bootstrap-modernbert-cpu-deve/`.
 - 2026-04-22: Implemented the ModernBERT CPU classifier runtime, EC2 bootstrap script, compose cache mount, and setup documentation under `.planning/quick/260422-tp1-implement-modernbert-cpu-ec2-bootstrap-a/`.
+- 2026-04-22: Fixed gibberish PDF `extracted_text` by switching the extractor PDF direct path to `pypdf` + improved OCR fallback (quick task `260422-vpa`).
+- 2026-04-22: Added a text-only ModernBERT fine-tuning scaffold under `training/text_finetune/` (quick task `260422-wba`).
+- 2026-04-22: Expanded `training/text_finetune/README.md` into a start-to-finish training guide (quick task `260422-wgv`).
+- 2026-04-22: Added `generate_raw_jsonl.py` to build labeled training JSONL by extracting text from local docs via the extractor service (quick task `260422-wln`).
 
 ## Next Step
 
